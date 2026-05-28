@@ -1,0 +1,5 @@
+-keepattributes Signature
+-keepattributes *Annotation*
+-keep class com.lmstudio.client.data.** { *; }
+-keep class okhttp3.** { *; }
+-keep class okhttp3.sse.** { *; }
