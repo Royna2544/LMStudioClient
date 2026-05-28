@@ -26,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import kotlin.math.round
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -88,8 +89,9 @@ fun ChatSettingsSheet(
                 label = "Temperature",
                 value = settings.temperature,
                 valueRange = 0f..2f,
-                displayValue = "%.2f".format(settings.temperature),
-                onValueChange = { onSettingsChange(settings.copy(temperature = it)) }
+                steps = 19,
+                displayValue = "%.1f".format(settings.temperature),
+                onValueChange = { onSettingsChange(settings.copy(temperature = it.roundToTenths())) }
             )
 
             // Top-P
@@ -155,6 +157,8 @@ fun ChatSettingsSheet(
         }
     }
 }
+
+private fun Float.roundToTenths(): Float = round(this * 10f) / 10f
 
 @Composable
 private fun SettingRowToggle(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {

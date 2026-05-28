@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.math.round
 import java.util.UUID
 
 enum class ReasoningMode(val label: String, val apiValue: String?) {
@@ -244,7 +245,7 @@ class ChatViewModel(
             input = input,
             stream = settings.stream,
             systemPrompt = settings.systemPrompt.takeIf { it.isNotBlank() },
-            temperature = settings.temperature.toDouble(),
+            temperature = settings.temperature.roundToTenths().toDouble(),
             topP = settings.topP.toDouble(),
             topK = settings.topK,
             minP = settings.minP.toDouble(),
@@ -386,6 +387,8 @@ class ChatViewModel(
 }
 
 private const val DEFAULT_CHAT_TITLE = "New chat"
+
+private fun Float.roundToTenths(): Float = round(this * 10f) / 10f
 
 private fun ChatUiState.currentTitle(): String =
     chatSessions.find { it.id == currentChatId }?.title ?: DEFAULT_CHAT_TITLE
