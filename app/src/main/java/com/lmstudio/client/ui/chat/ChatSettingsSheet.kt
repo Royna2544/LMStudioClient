@@ -99,8 +99,9 @@ fun ChatSettingsSheet(
                 label = "Top-P",
                 value = settings.topP,
                 valueRange = 0f..1f,
+                steps = 99,
                 displayValue = "%.2f".format(settings.topP),
-                onValueChange = { onSettingsChange(settings.copy(topP = it)) }
+                onValueChange = { onSettingsChange(settings.copy(topP = it.roundToHundredths())) }
             )
 
             // Top-K (integer)
@@ -118,17 +119,27 @@ fun ChatSettingsSheet(
                 label = "Min-P",
                 value = settings.minP,
                 valueRange = 0f..1f,
+                steps = 99,
                 displayValue = "%.2f".format(settings.minP),
-                onValueChange = { onSettingsChange(settings.copy(minP = it)) }
+                onValueChange = { onSettingsChange(settings.copy(minP = it.roundToHundredths())) }
             )
 
             Spacer(Modifier.height(4.dp))
 
             // Repeat penalty toggle
             SettingRowToggle(
-                label = "Repeat Penalty (1.1)",
+                label = "Repeat Penalty",
                 checked = settings.repeatPenaltyEnabled,
                 onCheckedChange = { onSettingsChange(settings.copy(repeatPenaltyEnabled = it)) }
+            )
+
+            SliderSetting(
+                label = "Penalty Ratio",
+                value = settings.repeatPenalty,
+                valueRange = 1f..2f,
+                steps = 19,
+                displayValue = "%.2f".format(settings.repeatPenalty),
+                onValueChange = { onSettingsChange(settings.copy(repeatPenalty = it.roundToTwentieths())) }
             )
 
             Spacer(Modifier.height(12.dp))
@@ -158,7 +169,13 @@ fun ChatSettingsSheet(
     }
 }
 
-private fun Float.roundToTenths(): Float = round(this * 10f) / 10f
+private fun Float.roundToTenths(): Float = roundToPlaces(10f)
+
+private fun Float.roundToHundredths(): Float = roundToPlaces(100f)
+
+private fun Float.roundToTwentieths(): Float = roundToPlaces(20f)
+
+private fun Float.roundToPlaces(scale: Float): Float = round(this * scale) / scale
 
 @Composable
 private fun SettingRowToggle(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {

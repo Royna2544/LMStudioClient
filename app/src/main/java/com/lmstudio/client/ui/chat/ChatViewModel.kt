@@ -246,10 +246,10 @@ class ChatViewModel(
             stream = settings.stream,
             systemPrompt = settings.systemPrompt.takeIf { it.isNotBlank() },
             temperature = settings.temperature.roundToTenths().toDouble(),
-            topP = settings.topP.toDouble(),
+            topP = settings.topP.roundToHundredths().toDouble(),
             topK = settings.topK,
-            minP = settings.minP.toDouble(),
-            repeatPenalty = if (settings.repeatPenaltyEnabled) settings.repeatPenalty.toDouble() else null,
+            minP = settings.minP.roundToHundredths().toDouble(),
+            repeatPenalty = if (settings.repeatPenaltyEnabled) settings.repeatPenalty.roundToTwentieths().toDouble() else null,
             reasoning = settings.reasoningMode.apiValue,
             store = settings.saveRemoteHistory,
             previousResponseId = previousResponseId
@@ -389,6 +389,10 @@ class ChatViewModel(
 private const val DEFAULT_CHAT_TITLE = "New chat"
 
 private fun Float.roundToTenths(): Float = round(this * 10f) / 10f
+
+private fun Float.roundToHundredths(): Float = round(this * 100f) / 100f
+
+private fun Float.roundToTwentieths(): Float = round(this * 20f) / 20f
 
 private fun ChatUiState.currentTitle(): String =
     chatSessions.find { it.id == currentChatId }?.title ?: DEFAULT_CHAT_TITLE
