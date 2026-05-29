@@ -74,8 +74,8 @@ fun MarkdownText(
                 is MarkdownBlock.UnorderedList -> block.items.forEach { item ->
                     ListRow(marker = "-", text = item, color = color, fontSize = fontSize, linkColor = linkColor, codeBackground = codeBackground)
                 }
-                is MarkdownBlock.OrderedList -> block.items.forEachIndexed { index, item ->
-                    ListRow(marker = "${index + 1}.", text = item, color = color, fontSize = fontSize, linkColor = linkColor, codeBackground = codeBackground)
+                is MarkdownBlock.OrderedList -> block.items.forEach { item ->
+                    ListRow(marker = "${item.number}.", text = item.text, color = color, fontSize = fontSize, linkColor = linkColor, codeBackground = codeBackground)
                 }
                 MarkdownBlock.Rule -> HorizontalDivider(color = color.copy(alpha = 0.24f))
             }
@@ -284,9 +284,13 @@ private fun parseMarkdownBlocks(markdown: String): List<MarkdownBlock> {
             }
             ORDERED_LIST_REGEX.matches(line) -> {
                 flushParagraph()
-                val items = mutableListOf<String>()
+                val items = mutableListOf<OrderedListItem>()
                 while (index < lines.size && ORDERED_LIST_REGEX.matches(lines[index])) {
-                    items += ORDERED_LIST_REGEX.matchEntire(lines[index])!!.groupValues[1].trim()
+                    val match = ORDERED_LIST_REGEX.matchEntire(lines[index])!!
+                    items += OrderedListItem(
+                        number = match.groupValues[1].toIntOrNull() ?: (items.size + 1),
+                        text = match.groupValues[2].trim()
+                    )
                     index++
                 }
                 blocks += MarkdownBlock.OrderedList(items)
@@ -323,12 +327,18 @@ private sealed interface MarkdownBlock {
     data class Code(val text: String) : MarkdownBlock
     data class Quote(val text: String) : MarkdownBlock
     data class UnorderedList(val items: List<String>) : MarkdownBlock
-    data class OrderedList(val items: List<String>) : MarkdownBlock
+    data class OrderedList(val items: List<OrderedListItem>) : MarkdownBlock
     data object Rule : MarkdownBlock
 }
+
+@Immutable
+private data class OrderedListItem(
+    val number: Int,
+    val text: String
+)
 
 private val HEADING_REGEX = Regex("^(#{1,6})\\s+(.+)$")
 private val RULE_REGEX = Regex("^([-*_])\\1\\1+$")
 private val QUOTE_REGEX = Regex("^\\s*>\\s?(.*)$")
 private val UNORDERED_LIST_REGEX = Regex("^\\s*[-*+]\\s+(.+)$")
-private val ORDERED_LIST_REGEX = Regex("^\\s*\\d+[.)]\\s+(.+)$")
+private val ORDERED_LIST_REGEX = Regex("^\\s*(\\d+)[.)]\\s+(.+)$")
