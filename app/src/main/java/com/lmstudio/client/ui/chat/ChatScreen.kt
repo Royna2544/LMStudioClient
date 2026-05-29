@@ -1,10 +1,13 @@
 package com.lmstudio.client.ui.chat
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.provider.OpenableColumns
 import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -52,6 +55,7 @@ import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DrawerValue
@@ -97,6 +101,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.lmstudio.client.data.api.dto.briefContextLength
 import com.lmstudio.client.ui.components.MessageBubble
 import kotlinx.coroutines.launch
@@ -125,6 +130,37 @@ fun ChatScreen(
     var userPausedStreamingFollow by remember { mutableStateOf(false) }
     var hadActiveGeneration by remember { mutableStateOf(false) }
     var lastAutoScrolledChatId by rememberSaveable { mutableStateOf<String?>(null) }
+    var showNotificationPermissionDialog by remember { mutableStateOf(false) }
+    var pendingGenerationRequest by remember { mutableStateOf<PendingGenerationRequest?>(null) }
+
+    fun runGenerationRequest(request: PendingGenerationRequest) {
+        when (request) {
+            PendingGenerationRequest.Send -> viewModel.sendMessage()
+            is PendingGenerationRequest.Retry -> viewModel.retryResponse(request.assistantMessageId)
+        }
+    }
+
+    fun startGenerationWithNotificationGate(request: PendingGenerationRequest) {
+        val needsNotificationPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        if (needsNotificationPermission) {
+            pendingGenerationRequest = request
+            showNotificationPermissionDialog = true
+        } else {
+            runGenerationRequest(request)
+        }
+    }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) {
+        val request = pendingGenerationRequest
+        pendingGenerationRequest = null
+        request?.let(::runGenerationRequest)
+    }
 
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -230,6 +266,27 @@ fun ChatScreen(
             delay(2_500)
             viewModel.dismissNotice()
         }
+    }
+
+    if (showNotificationPermissionDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showNotificationPermissionDialog = false
+                pendingGenerationRequest = null
+            },
+            title = { Text("Enable notifications") },
+            text = { Text("Allow notifications so generation can continue in the background.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showNotificationPermissionDialog = false
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                ) {
+                    Text("OK")
+                }
+            }
+        )
     }
 
     val mainContent: @Composable (Boolean, Modifier) -> Unit = { showHistoryButton, modifier ->
@@ -513,7 +570,11 @@ fun ChatScreen(
                                     onCopy = { copyResponseText(context, message.content) },
                                     onShare = { shareResponseText(context, message.content) },
                                     onEdit = { viewModel.editUserMessage(message.id) },
-                                    onRetry = { viewModel.retryResponse(message.id) }
+                                    onRetry = {
+                                        startGenerationWithNotificationGate(
+                                            PendingGenerationRequest.Retry(message.id)
+                                        )
+                                    }
                                 )
                             }
                         }
@@ -621,7 +682,9 @@ fun ChatScreen(
                                 }
                             } else {
                                 FilledIconButton(
-                                    onClick = { viewModel.sendMessage() },
+                                    onClick = {
+                                        startGenerationWithNotificationGate(PendingGenerationRequest.Send)
+                                    },
                                     enabled = (uiState.inputText.isNotBlank() || uiState.pendingAttachments.isNotEmpty()) &&
                                         uiState.selectedModel.isNotEmpty()
                                 ) {
@@ -802,6 +865,11 @@ private val HISTORY_PANE_WIDTH = HISTORY_PANE_DEFAULT_WIDTH_VALUE.dp
 private val HISTORY_PANE_BREAKPOINT = 600.dp
 private val HISTORY_SPLITTER_WIDTH = 1.dp
 private val HISTORY_SPLITTER_LINE_WIDTH = 1.dp
+
+private sealed class PendingGenerationRequest {
+    object Send : PendingGenerationRequest()
+    data class Retry(val assistantMessageId: String) : PendingGenerationRequest()
+}
 
 @Composable
 private fun ChatHistoryDrawer(
