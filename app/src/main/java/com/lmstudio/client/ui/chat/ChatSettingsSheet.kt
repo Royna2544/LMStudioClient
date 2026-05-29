@@ -87,11 +87,11 @@ fun ChatSettingsSheet(
             // Temperature
             SliderSetting(
                 label = "Temperature",
-                value = settings.temperature,
-                valueRange = 0f..2f,
-                steps = 19,
-                displayValue = "%.1f".format(settings.temperature),
-                onValueChange = { onSettingsChange(settings.copy(temperature = it.roundToTenths())) }
+                value = settings.temperature.clampTemperature(),
+                valueRange = MIN_TEMPERATURE..MAX_TEMPERATURE,
+                steps = 9,
+                displayValue = "%.1f".format(settings.temperature.clampTemperature()),
+                onValueChange = { onSettingsChange(settings.copy(temperature = it.roundToTenths().clampTemperature())) }
             )
 
             // Top-P

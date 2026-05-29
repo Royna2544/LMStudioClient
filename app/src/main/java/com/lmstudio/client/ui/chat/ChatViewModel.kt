@@ -48,7 +48,7 @@ enum class ReasoningMode(val label: String, val apiValue: String?) {
 data class ChatSettings(
     val systemPrompt: String = "",
     val stream: Boolean = true,
-    val temperature: Float = 0.7f,
+    val temperature: Float = DEFAULT_TEMPERATURE,
     val topP: Float = 0.95f,
     val topK: Int = 40,
     val minP: Float = 0.05f,
@@ -499,7 +499,7 @@ class ChatViewModel(
                 userPrompt = settings.systemPrompt,
                 tools = activeLocalTools
             ),
-            temperature = settings.temperature.toApiDecimal(scale = 2),
+            temperature = settings.temperature.clampTemperature().toApiDecimal(scale = 2),
             topP = settings.topP.toApiDecimal(scale = 2),
             topK = settings.topK,
             minP = settings.minP.toApiDecimal(scale = 2),
@@ -899,12 +899,18 @@ class ChatViewModel(
 private const val DEFAULT_CHAT_TITLE = "New chat"
 private const val TEMPORARY_CHAT_TITLE = "Temporary chat"
 private const val USER_CANCELED_GENERATION_MESSAGE = "User canceled generation"
+const val MIN_TEMPERATURE = 0f
+const val MAX_TEMPERATURE = 1f
+const val DEFAULT_TEMPERATURE = 0.7f
 private val CHAT_SESSION_LIST_TYPE = object : TypeToken<List<ChatSession>>() {}.type
 
 private fun Float.toApiDecimal(scale: Int): Double =
     BigDecimal.valueOf(toDouble())
         .setScale(scale, RoundingMode.HALF_UP)
         .toDouble()
+
+fun Float.clampTemperature(): Float =
+    coerceIn(MIN_TEMPERATURE, MAX_TEMPERATURE)
 
 private fun ChatUiState.currentTitle(): String =
     chatSessions.find { it.id == currentChatId }?.title ?: DEFAULT_CHAT_TITLE
