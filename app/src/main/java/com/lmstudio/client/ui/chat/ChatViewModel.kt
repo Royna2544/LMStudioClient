@@ -494,7 +494,7 @@ class ChatViewModel(
             stream = settings.stream,
             systemPrompt = buildSystemPrompt(
                 userPrompt = settings.systemPrompt,
-                localTools = activeLocalTools
+                tools = activeLocalTools
             ),
             temperature = settings.temperature.toApiDecimal(scale = 2),
             topP = settings.topP.toApiDecimal(scale = 2),
