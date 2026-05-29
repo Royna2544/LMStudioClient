@@ -116,7 +116,13 @@ class ChatRepository(
                 t: Throwable?,
                 response: Response?
             ) {
-                close(IOException(response?.errorMessage() ?: t?.message ?: "Stream failed"))
+                val message = when {
+                    response != null && !response.isSuccessful -> response.errorMessage()
+                    !t?.message.isNullOrBlank() -> t?.message
+                    response?.isSuccessful == true -> "LM Studio closed the stream before returning a response."
+                    else -> "Stream failed"
+                } ?: "Stream failed"
+                close(IOException(message))
             }
 
             override fun onClosed(eventSource: EventSource) {
@@ -174,17 +180,19 @@ private fun Response.errorMessage(): String? {
 
 private fun Response.codeMessage(): String = "Server returned $code"
 
-private fun extractErrorMessage(bodyText: String): String? = try {
-    val root = JsonParser.parseString(bodyText)
-    if (!root.isJsonObject) return null
-    val error = root.asJsonObject.get("error")
-    val message = when {
-        error == null || error.isJsonNull -> null
-        error.isJsonPrimitive -> error.asString
-        error.isJsonObject -> error.asJsonObject.get("message")?.asString
-        else -> null
+private fun extractErrorMessage(bodyText: String): String? {
+    try {
+        val root = JsonParser.parseString(bodyText)
+        if (!root.isJsonObject) return null
+        val error = root.asJsonObject.get("error")
+        val message = when {
+            error == null || error.isJsonNull -> null
+            error.isJsonPrimitive -> error.asString
+            error.isJsonObject -> error.asJsonObject.get("message")?.asString
+            else -> null
+        }
+        return message?.takeIf { it.isNotBlank() }
+    } catch (_: Exception) {
+        return null
     }
-    message?.takeIf { it.isNotBlank() }
-} catch (_: Exception) {
-    null
 }
