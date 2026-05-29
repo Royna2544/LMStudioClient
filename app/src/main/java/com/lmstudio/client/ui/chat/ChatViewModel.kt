@@ -3,6 +3,8 @@ package com.lmstudio.client.ui.chat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import com.lmstudio.client.data.api.dto.ChatInputItem
 import com.lmstudio.client.data.api.dto.ChatMessage
 import com.lmstudio.client.data.api.dto.ChatRequest
@@ -60,7 +62,8 @@ data class ChatSession(
     val title: String = DEFAULT_CHAT_TITLE,
     val messages: List<UiMessage> = emptyList(),
     val remoteResponseId: String? = null,
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    val isTemporary: Boolean = false
 )
 
 enum class PendingAttachmentType {
@@ -91,7 +94,8 @@ data class ChatUiState(
     val chatSettings: ChatSettings = ChatSettings(),
     val error: String? = null,
     val isLoadingModels: Boolean = false,
-    val remoteResponseId: String? = null
+    val remoteResponseId: String? = null,
+    val isTemporaryChat: Boolean = false
 )
 
 class ChatViewModel(
@@ -108,9 +112,27 @@ class ChatViewModel(
     )
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
+    private val historyGson = Gson()
     private var streamingJob: Job? = null
+    private var historyLoaded = false
+    private var persistHistoryJob: Job? = null
 
     init {
+        viewModelScope.launch {
+            val savedSessions = parseSavedSessions(preferences.chatHistoryJson.first())
+            val sessions = savedSessions.ifEmpty { listOf(initialSession) }
+            val currentSession = sessions.first()
+            _uiState.update { current ->
+                current.copy(
+                    chatSessions = sessions,
+                    currentChatId = currentSession.id,
+                    messages = currentSession.messages,
+                    remoteResponseId = currentSession.remoteResponseId,
+                    isTemporaryChat = currentSession.isTemporary
+                )
+            }
+            historyLoaded = true
+        }
         viewModelScope.launch {
             // Await first values so loadModels() uses the real saved URL/token
             val url = preferences.baseUrl.first()
@@ -161,6 +183,7 @@ class ChatViewModel(
         _uiState.update { current ->
             current.withCurrentSession(remoteResponseId = null).copy(selectedModel = model)
         }
+        persistChatHistory()
         viewModelScope.launch { preferences.saveSelectedModel(model) }
     }
 
@@ -204,9 +227,14 @@ class ChatViewModel(
         _uiState.update { current ->
             current.copy(
                 chatSettings = settings,
-                remoteResponseId = if (settings.saveRemoteHistory) current.remoteResponseId else null
+                remoteResponseId = if (settings.saveRemoteHistory && !current.isTemporaryChat) {
+                    current.remoteResponseId
+                } else {
+                    null
+                }
             )
         }
+        persistChatHistory()
     }
 
     fun sendMessage() {
@@ -214,6 +242,7 @@ class ChatViewModel(
         val text = state.inputText.trim()
         val attachments = state.pendingAttachments
         if ((text.isEmpty() && attachments.isEmpty()) || state.isStreaming || state.selectedModel.isEmpty()) return
+        val requestSettings = state.requestSettings()
 
         val userVisibleContent = buildVisibleUserMessage(text)
         val userMessage = UiMessage(
@@ -252,18 +281,19 @@ class ChatViewModel(
             baseUrl = state.baseUrl,
             bearerToken = state.bearerToken,
             selectedModel = state.selectedModel,
-            settings = state.chatSettings,
-            remoteResponseId = state.remoteResponseId,
+            settings = requestSettings,
+            remoteResponseId = if (state.isTemporaryChat) null else state.remoteResponseId,
             text = text,
             attachments = attachments,
             history = history,
-            useRemoteContinuation = state.chatSettings.saveRemoteHistory
+            useRemoteContinuation = requestSettings.saveRemoteHistory
         )
     }
 
     fun retryResponse(assistantMessageId: String) {
         val state = _uiState.value
         if (state.isStreaming || state.selectedModel.isEmpty()) return
+        val requestSettings = state.requestSettings()
 
         val assistantIndex = state.messages.indexOfFirst {
             it.id == assistantMessageId && it.role == "assistant"
@@ -301,7 +331,7 @@ class ChatViewModel(
             baseUrl = state.baseUrl,
             bearerToken = state.bearerToken,
             selectedModel = state.selectedModel,
-            settings = state.chatSettings,
+            settings = requestSettings,
             remoteResponseId = null,
             text = retryText,
             attachments = retryAttachments,
@@ -326,7 +356,7 @@ class ChatViewModel(
             val message = current.messages[messageIndex]
             val remainingMessages = current.messages.take(messageIndex)
             val restoredTitle = if (remainingMessages.none { it.role == "user" }) {
-                DEFAULT_CHAT_TITLE
+                if (current.isTemporaryChat) TEMPORARY_CHAT_TITLE else DEFAULT_CHAT_TITLE
             } else {
                 null
             }
@@ -343,6 +373,7 @@ class ChatViewModel(
                 title = restoredTitle
             )
         }
+        persistChatHistory()
     }
 
     private fun startResponseStream(
@@ -436,6 +467,7 @@ class ChatViewModel(
                     }
                     current.withCurrentSession(messages = msgs).copy(error = message)
                 }
+                persistChatHistory()
             } finally {
                 val flushed = thinkTagState.flush()
                 _uiState.update { current ->
@@ -460,6 +492,7 @@ class ChatViewModel(
                     }
                     current.withCurrentSession(messages = msgs).copy(isStreaming = false)
                 }
+                persistChatHistory()
             }
         }
     }
@@ -470,6 +503,7 @@ class ChatViewModel(
 
     fun clearMessages() {
         _uiState.update {
+            val title = if (it.isTemporaryChat) TEMPORARY_CHAT_TITLE else DEFAULT_CHAT_TITLE
             it.copy(
                 messages = emptyList(),
                 pendingAttachments = emptyList(),
@@ -479,9 +513,10 @@ class ChatViewModel(
                 .withCurrentSession(
                     messages = emptyList(),
                     remoteResponseId = null,
-                    title = DEFAULT_CHAT_TITLE
+                    title = title
                 )
         }
+        persistChatHistory()
     }
 
     fun dismissError() {
@@ -494,12 +529,13 @@ class ChatViewModel(
 
     fun startNewChat() {
         _uiState.update { current ->
-            if (current.messages.isEmpty() && current.currentTitle() == DEFAULT_CHAT_TITLE) {
+            if (!current.isTemporaryChat && current.messages.isEmpty() && current.currentTitle() == DEFAULT_CHAT_TITLE) {
                 current.copy(
                     inputText = "",
                     pendingAttachments = emptyList(),
                     error = null,
-                    remoteResponseId = null
+                    remoteResponseId = null,
+                    isTemporaryChat = false
                 )
             } else {
                 val session = ChatSession()
@@ -510,9 +546,32 @@ class ChatViewModel(
                     inputText = "",
                     pendingAttachments = emptyList(),
                     error = null,
-                    remoteResponseId = null
+                    remoteResponseId = null,
+                    isTemporaryChat = false
                 )
             }
+        }
+        persistChatHistory()
+    }
+
+    fun startTemporaryChat() {
+        _uiState.update { current ->
+            if (current.isStreaming) return@update current
+
+            val session = ChatSession(
+                title = TEMPORARY_CHAT_TITLE,
+                isTemporary = true
+            )
+            current.copy(
+                chatSessions = listOf(session) + current.chatSessions,
+                currentChatId = session.id,
+                messages = emptyList(),
+                inputText = "",
+                pendingAttachments = emptyList(),
+                error = null,
+                remoteResponseId = null,
+                isTemporaryChat = true
+            )
         }
     }
 
@@ -528,9 +587,25 @@ class ChatViewModel(
                     inputText = "",
                     pendingAttachments = emptyList(),
                     error = null,
-                    remoteResponseId = session.remoteResponseId
+                    remoteResponseId = session.remoteResponseId,
+                    isTemporaryChat = session.isTemporary
                 )
             }
+        }
+    }
+
+    private fun persistChatHistory(state: ChatUiState = _uiState.value) {
+        if (!historyLoaded) return
+
+        val savedSessions = state.chatSessions
+            .filterNot { it.isTemporary }
+            .filter { it.messages.isNotEmpty() || it.title != DEFAULT_CHAT_TITLE }
+            .map { it.forSavedHistory() }
+            .sortedByDescending { it.updatedAt }
+
+        persistHistoryJob?.cancel()
+        persistHistoryJob = viewModelScope.launch {
+            preferences.saveChatHistoryJson(historyGson.toJson(savedSessions))
         }
     }
 
@@ -545,6 +620,8 @@ class ChatViewModel(
 }
 
 private const val DEFAULT_CHAT_TITLE = "New chat"
+private const val TEMPORARY_CHAT_TITLE = "Temporary chat"
+private val CHAT_SESSION_LIST_TYPE = object : TypeToken<List<ChatSession>>() {}.type
 
 private fun Float.toApiDecimal(scale: Int): Double =
     BigDecimal.valueOf(toDouble())
@@ -553,6 +630,9 @@ private fun Float.toApiDecimal(scale: Int): Double =
 
 private fun ChatUiState.currentTitle(): String =
     chatSessions.find { it.id == currentChatId }?.title ?: DEFAULT_CHAT_TITLE
+
+private fun ChatUiState.requestSettings(): ChatSettings =
+    if (isTemporaryChat) chatSettings.copy(saveRemoteHistory = false) else chatSettings
 
 private fun ChatUiState.withCurrentSession(
     messages: List<UiMessage> = this.messages,
@@ -575,9 +655,36 @@ private fun ChatUiState.withCurrentSession(
     return copy(
         chatSessions = updatedSessions,
         messages = messages,
-        remoteResponseId = remoteResponseId
+        remoteResponseId = remoteResponseId,
+        isTemporaryChat = updatedSessions.firstOrNull { it.id == currentChatId }?.isTemporary ?: isTemporaryChat
     )
 }
+
+private fun parseSavedSessions(json: String): List<ChatSession> = try {
+    if (json.isBlank()) {
+        emptyList()
+    } else {
+        val sessions = Gson().fromJson<List<ChatSession>>(json, CHAT_SESSION_LIST_TYPE).orEmpty()
+        sessions
+            .filterNot { it.isTemporary }
+            .map { it.forRestoredHistory() }
+            .sortedByDescending { it.updatedAt }
+    }
+} catch (_: Exception) {
+    emptyList()
+}
+
+private fun ChatSession.forRestoredHistory(): ChatSession =
+    copy(
+        messages = messages.map { it.copy(isThinking = false, isStreaming = false) },
+        isTemporary = false
+    )
+
+private fun ChatSession.forSavedHistory(): ChatSession =
+    copy(
+        messages = messages.map { it.copy(isThinking = false, isStreaming = false) },
+        isTemporary = false
+    )
 
 private fun generateChatTitle(text: String, attachments: List<PendingAttachment>): String {
     val normalized = text.replace(Regex("\\s+"), " ").trim()

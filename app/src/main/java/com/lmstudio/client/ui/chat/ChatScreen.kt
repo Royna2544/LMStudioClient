@@ -65,6 +65,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
@@ -201,6 +202,10 @@ fun ChatScreen(
                     viewModel.startNewChat()
                     scope.launch { drawerState.close() }
                 },
+                onTemporaryChat = {
+                    viewModel.startTemporaryChat()
+                    scope.launch { drawerState.close() }
+                },
                 onSelectChat = { chatId ->
                     viewModel.selectChat(chatId)
                     scope.launch { drawerState.close() }
@@ -243,9 +248,16 @@ fun ChatScreen(
                                             }
                                         }
                                     }.orEmpty()
-                                    if (briefInfo.isNotBlank()) {
+                                    val statusInfo = buildString {
+                                        if (uiState.isTemporaryChat) append("Temporary")
+                                        if (briefInfo.isNotBlank()) {
+                                            if (isNotEmpty()) append(" · ")
+                                            append(briefInfo)
+                                        }
+                                    }
+                                    if (statusInfo.isNotBlank()) {
                                         Text(
-                                            text = briefInfo,
+                                            text = statusInfo,
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             maxLines = 1
@@ -642,6 +654,7 @@ private fun ChatHistoryDrawer(
     sessions: List<ChatSession>,
     currentChatId: String,
     onNewChat: () -> Unit,
+    onTemporaryChat: () -> Unit,
     onSelectChat: (String) -> Unit
 ) {
     ModalDrawerSheet(modifier = Modifier.width(320.dp)) {
@@ -656,6 +669,9 @@ private fun ChatHistoryDrawer(
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.titleMedium
             )
+            TextButton(onClick = onTemporaryChat) {
+                Text("Temporary")
+            }
             IconButton(onClick = onNewChat) {
                 Icon(Icons.Default.Add, contentDescription = "New chat")
             }
@@ -668,11 +684,20 @@ private fun ChatHistoryDrawer(
             items(sessions, key = { it.id }) { session ->
                 NavigationDrawerItem(
                     label = {
-                        Text(
-                            text = session.title,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Column {
+                            Text(
+                                text = session.title,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (session.isTemporary) {
+                                Text(
+                                    text = "Temporary",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                     },
                     selected = session.id == currentChatId,
                     onClick = { onSelectChat(session.id) }

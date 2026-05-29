@@ -19,6 +19,7 @@ class AppPreferences(context: Context) {
         private val BASE_URL_KEY = stringPreferencesKey("base_url")
         private val SELECTED_MODEL_KEY = stringPreferencesKey("selected_model")
         private val BEARER_TOKEN_KEY = stringPreferencesKey("bearer_token")
+        private val CHAT_HISTORY_KEY = stringPreferencesKey("chat_history")
         const val DEFAULT_BASE_URL = "http://10.0.2.2:1234"
     }
 
@@ -34,6 +35,10 @@ class AppPreferences(context: Context) {
         prefs[BEARER_TOKEN_KEY] ?: ""
     }
 
+    val chatHistoryJson: Flow<String> = dataStore.data.map { prefs ->
+        prefs[CHAT_HISTORY_KEY] ?: ""
+    }
+
     suspend fun saveBaseUrl(url: String) {
         dataStore.edit { prefs -> prefs[BASE_URL_KEY] = url }
     }
@@ -44,5 +49,9 @@ class AppPreferences(context: Context) {
 
     suspend fun saveBearerToken(token: String) {
         dataStore.edit { prefs -> prefs[BEARER_TOKEN_KEY] = token }
+    }
+
+    suspend fun saveChatHistoryJson(json: String) {
+        dataStore.edit { prefs -> prefs[CHAT_HISTORY_KEY] = json }
     }
 }
