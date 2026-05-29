@@ -84,6 +84,7 @@ import androidx.compose.ui.unit.dp
 import com.lmstudio.client.data.api.dto.briefContextLength
 import com.lmstudio.client.ui.components.MessageBubble
 import kotlinx.coroutines.launch
+import kotlin.math.max
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -151,10 +152,12 @@ fun ChatScreen(
         derivedStateOf {
             val layoutInfo = listState.layoutInfo
             val visibleItems = layoutInfo.visibleItemsInfo
-            val bottomAnchor = visibleItems.firstOrNull { it.index == bottomAnchorIndex }
-                ?: return@derivedStateOf false
+            val lastVisibleIndex = visibleItems.lastOrNull()?.index ?: return@derivedStateOf true
+            val lastItemIndex = max(0, layoutInfo.totalItemsCount - 1)
+            val lastVisibleItem = visibleItems.lastOrNull()
             val viewportBottom = layoutInfo.viewportEndOffset
-            bottomAnchor.offset + bottomAnchor.size <= viewportBottom + 8
+            val lastItemBottom = lastVisibleItem?.let { it.offset + it.size } ?: 0
+            lastVisibleIndex >= lastItemIndex - 1 && lastItemBottom <= viewportBottom + 96
         }
     }
     val editableUserMessageId = remember(uiState.messages, uiState.isStreaming) {
@@ -168,16 +171,22 @@ fun ChatScreen(
         }
     }
 
-    LaunchedEffect(listState.isScrollInProgress, shouldFollowStreaming) {
-        if (listState.isScrollInProgress) {
+    LaunchedEffect(listState.isScrollInProgress, shouldFollowStreaming, uiState.isStreaming) {
+        if (!uiState.isStreaming) {
+            followStreaming = false
+        } else if (listState.isScrollInProgress) {
             followStreaming = shouldFollowStreaming
         } else if (shouldFollowStreaming) {
             followStreaming = true
         }
     }
 
-    LaunchedEffect(streamingContentLength) {
-        if (uiState.messages.isNotEmpty() && followStreaming && !listState.isScrollInProgress) {
+    LaunchedEffect(streamingContentLength, uiState.isStreaming) {
+        if (uiState.isStreaming &&
+            uiState.messages.isNotEmpty() &&
+            followStreaming &&
+            !listState.isScrollInProgress
+        ) {
             listState.scrollToItem(bottomAnchorIndex)
         }
     }
