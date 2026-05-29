@@ -10,7 +10,9 @@ import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,6 +42,7 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
@@ -79,15 +82,22 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lmstudio.client.data.api.dto.briefContextLength
 import com.lmstudio.client.ui.components.MessageBubble
 import kotlinx.coroutines.launch
+import kotlin.math.absoluteValue
 import kotlin.math.max
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -220,7 +230,9 @@ fun ChatScreen(
                 onSelectChat = { chatId ->
                     viewModel.selectChat(chatId)
                     scope.launch { drawerState.close() }
-                }
+                },
+                onPinChat = viewModel::pinChat,
+                onDeleteChat = viewModel::deleteChat
             )
         }
     ) {
@@ -666,8 +678,13 @@ private fun ChatHistoryDrawer(
     currentChatId: String,
     onNewChat: () -> Unit,
     onTemporaryChat: () -> Unit,
-    onSelectChat: (String) -> Unit
+    onSelectChat: (String) -> Unit,
+    onPinChat: (String) -> Unit,
+    onDeleteChat: (String) -> Unit
 ) {
+    val pinnedSessions = sessions.filter { it.isPinned }
+    val recentSessions = sessions.filterNot { it.isPinned }
+
     ModalDrawerSheet(modifier = Modifier.width(320.dp)) {
         Row(
             modifier = Modifier
@@ -692,28 +709,141 @@ private fun ChatHistoryDrawer(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
         ) {
-            items(sessions, key = { it.id }) { session ->
-                NavigationDrawerItem(
-                    label = {
-                        Column {
-                            Text(
-                                text = session.title,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            if (session.isTemporary) {
-                                Text(
-                                    text = "Temporary",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    },
-                    selected = session.id == currentChatId,
-                    onClick = { onSelectChat(session.id) }
-                )
+            if (pinnedSessions.isNotEmpty()) {
+                item(key = "pinned-section") {
+                    DrawerSectionLabel("Pinned Chat")
+                }
+                items(pinnedSessions, key = { it.id }) { session ->
+                    SwipeableChatHistoryItem(
+                        session = session,
+                        selected = session.id == currentChatId,
+                        onSelectChat = onSelectChat,
+                        onPinChat = onPinChat,
+                        onDeleteChat = onDeleteChat
+                    )
+                }
+            }
+            if (recentSessions.isNotEmpty()) {
+                if (pinnedSessions.isNotEmpty()) {
+                    item(key = "recent-section") {
+                        DrawerSectionLabel("Recent Chats")
+                    }
+                }
+                items(recentSessions, key = { it.id }) { session ->
+                    SwipeableChatHistoryItem(
+                        session = session,
+                        selected = session.id == currentChatId,
+                        onSelectChat = onSelectChat,
+                        onPinChat = onPinChat,
+                        onDeleteChat = onDeleteChat
+                    )
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun DrawerSectionLabel(text: String) {
+    Text(
+        text = text,
+        modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 6.dp),
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+
+@Composable
+private fun SwipeableChatHistoryItem(
+    session: ChatSession,
+    selected: Boolean,
+    onSelectChat: (String) -> Unit,
+    onPinChat: (String) -> Unit,
+    onDeleteChat: (String) -> Unit
+) {
+    var offsetX by remember(session.id) { mutableStateOf(0f) }
+    val density = LocalDensity.current
+    val revealLimitPx = with(density) { 112.dp.toPx() }
+    val commitThresholdPx = with(density) { 104.dp.toPx() }
+    val progress = (offsetX.absoluteValue / commitThresholdPx).coerceIn(0f, 1f)
+    val isPinSwipe = offsetX > 0f
+    val isDeleteSwipe = offsetX < 0f
+    val pinColor = Color(0xFF1565C0)
+    val deleteColor = MaterialTheme.colorScheme.error
+    val backgroundColor = when {
+        isPinSwipe -> pinColor.copy(alpha = 0.12f + (0.88f * progress))
+        isDeleteSwipe -> deleteColor.copy(alpha = 0.12f + (0.88f * progress))
+        else -> Color.Transparent
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(28.dp))
+            .background(backgroundColor)
+    ) {
+        if (isPinSwipe) {
+            Icon(
+                imageVector = Icons.Default.PushPin,
+                contentDescription = null,
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 20.dp),
+                tint = Color.White.copy(alpha = progress.coerceAtLeast(0.35f))
+            )
+        } else if (isDeleteSwipe) {
+            Icon(
+                imageVector = Icons.Default.Delete,
+                contentDescription = null,
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 20.dp),
+                tint = Color.White.copy(alpha = progress.coerceAtLeast(0.35f))
+            )
+        }
+
+        NavigationDrawerItem(
+            modifier = Modifier
+                .offset { IntOffset(offsetX.roundToInt(), 0) }
+                .pointerInput(session.id) {
+                    detectHorizontalDragGestures(
+                        onDragCancel = { offsetX = 0f },
+                        onDragEnd = {
+                            val completedOffset = offsetX
+                            offsetX = 0f
+                            when {
+                                completedOffset <= -commitThresholdPx -> onDeleteChat(session.id)
+                                completedOffset >= commitThresholdPx -> onPinChat(session.id)
+                            }
+                        }
+                    ) { change, dragAmount ->
+                        change.consume()
+                        offsetX = (offsetX + dragAmount).coerceIn(-revealLimitPx, revealLimitPx)
+                    }
+                },
+            label = {
+                Column {
+                    Text(
+                        text = session.title,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    when {
+                        session.isTemporary -> Text(
+                            text = "Temporary",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        session.isPinned -> Text(
+                            text = "Pinned",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            selected = selected,
+            onClick = { onSelectChat(session.id) }
+        )
     }
 }

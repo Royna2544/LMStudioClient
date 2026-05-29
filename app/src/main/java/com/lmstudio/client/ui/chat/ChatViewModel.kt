@@ -63,7 +63,8 @@ data class ChatSession(
     val messages: List<UiMessage> = emptyList(),
     val remoteResponseId: String? = null,
     val updatedAt: Long = System.currentTimeMillis(),
-    val isTemporary: Boolean = false
+    val isTemporary: Boolean = false,
+    val isPinned: Boolean = false
 )
 
 enum class PendingAttachmentType {
@@ -592,6 +593,49 @@ class ChatViewModel(
                 )
             }
         }
+    }
+
+    fun pinChat(chatId: String) {
+        _uiState.update { current ->
+            if (current.isStreaming) return@update current
+
+            current.copy(
+                chatSessions = current.chatSessions
+                    .map { session ->
+                        if (session.id == chatId) {
+                            session.copy(isPinned = true, updatedAt = System.currentTimeMillis())
+                        } else {
+                            session
+                        }
+                    }
+                    .sortedByDescending { it.updatedAt }
+            )
+        }
+        persistChatHistory()
+    }
+
+    fun deleteChat(chatId: String) {
+        _uiState.update { current ->
+            if (current.isStreaming) return@update current
+
+            val remainingSessions = current.chatSessions.filterNot { it.id == chatId }
+            if (chatId == current.currentChatId) {
+                val freshSession = ChatSession()
+                current.copy(
+                    chatSessions = listOf(freshSession) + remainingSessions,
+                    currentChatId = freshSession.id,
+                    messages = emptyList(),
+                    inputText = "",
+                    pendingAttachments = emptyList(),
+                    error = null,
+                    remoteResponseId = null,
+                    isTemporaryChat = false
+                )
+            } else {
+                current.copy(chatSessions = remainingSessions)
+            }
+        }
+        persistChatHistory()
     }
 
     private fun persistChatHistory(state: ChatUiState = _uiState.value) {
