@@ -1127,6 +1127,7 @@ private fun buildSystemPrompt(userPrompt: String, tools: List<ToolDefinition>): 
 
 private fun UiMessage.toTranscriptMessageOrNull(): ChatMessage? =
     when (role) {
+        "assistant" if isCanceled && content.isBlank() -> null
         "user", "assistant" -> ChatMessage(role = role, content = content)
         else -> null
     }
