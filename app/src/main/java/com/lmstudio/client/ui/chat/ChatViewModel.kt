@@ -56,22 +56,22 @@ data class ChatSettings(
     val saveRemoteHistory: Boolean = false
 )
 
-data class LocalToolInfo(
+data class ToolInfo(
     val name: String,
     val description: String
 )
 
 val LOCAL_TOOL_INFOS = listOf(
-    LocalToolInfo("current_time.time", "Return the current local date, time, UTC offset, and timezone."),
-    LocalToolInfo("system.device", "Return basic Android device manufacturer, brand, model, and hardware identifiers."),
-    LocalToolInfo("system.os", "Return Android version, SDK level, build ID, security patch, timezone, and locale."),
-    LocalToolInfo("system.battery", "Return battery level, charging state, health, temperature, voltage, and saver mode."),
-    LocalToolInfo("system.cpu", "Return CPU core count, supported ABIs, architecture, and best-effort CPU model."),
-    LocalToolInfo("system.memory", "Return system memory and app heap usage."),
-    LocalToolInfo("system.display", "Return display resolution, density, orientation, and font scale."),
-    LocalToolInfo("system.network", "Return current network connectivity, transport type, and metered status."),
-    LocalToolInfo("system.thermal", "Return Android thermal status when supported."),
-    LocalToolInfo("system.app", "Return this app's package name, version, and build code.")
+    ToolInfo("current_time.time", "Return the current local date, time, UTC offset, and timezone."),
+    ToolInfo("system.device", "Return basic Android device manufacturer, brand, model, and hardware identifiers."),
+    ToolInfo("system.os", "Return Android version, SDK level, build ID, security patch, timezone, and locale."),
+    ToolInfo("system.battery", "Return battery level, charging state, health, temperature, voltage, and saver mode."),
+    ToolInfo("system.cpu", "Return CPU core count, supported ABIs, architecture, and best-effort CPU model."),
+    ToolInfo("system.memory", "Return system memory and app heap usage."),
+    ToolInfo("system.display", "Return display resolution, density, orientation, and font scale."),
+    ToolInfo("system.network", "Return current network connectivity, transport type, and metered status."),
+    ToolInfo("system.thermal", "Return Android thermal status when supported."),
+    ToolInfo("system.app", "Return this app's package name, version, and build code.")
 )
 
 data class UiMessage(
@@ -588,7 +588,7 @@ class ChatViewModel(
                             .copy(isStreaming = true)
                     }
                     val toolResults = pendingToolCalls.mapIndexed { offset, call ->
-                        executeLocalTool(firstToolIndex + offset, call, activeLocalTools)
+                        executeTool(firstToolIndex + offset, call, activeLocalTools)
                     }
                     val uiToolCalls = toolResults.map { it.toUiToolCall() }
                     val toolPrompt = buildLocalToolResultPrompt(toolResults)
@@ -1052,10 +1052,10 @@ private fun buildRequestMessageText(text: String, attachments: List<PendingAttac
     if (isEmpty()) append("Please review the attached file.")
 }
 
-private fun buildSystemPrompt(userPrompt: String, localTools: List<LocalToolDefinition>): String? {
+private fun buildSystemPrompt(userPrompt: String, tools: List<ToolDefinition>): String? {
     val parts = buildList {
         userPrompt.trim().takeIf { it.isNotBlank() }?.let { add(it) }
-        if (localTools.isNotEmpty()) add(buildLocalToolPrompt(localTools))
+        if (tools.isNotEmpty()) add(buildToolPrompt(tools))
     }
     return parts.joinToString("\n\n").takeIf { it.isNotBlank() }
 }
@@ -1071,10 +1071,15 @@ private fun List<ChatMessage>.toTranscript(): String =
         "${message.role.replaceFirstChar { it.uppercase() }}:\n${message.content}"
     }
 
-private data class LocalToolDefinition(
-    val info: LocalToolInfo,
+private data class ToolDefinition(
+    val info: ToolInfo,
     val parameters: String = "{}",
-    val execute: (Map<String, String>) -> String
+    val execute: suspend (Map<String, String>) -> ToolExecutionResult
+)
+
+private data class ToolExecutionResult(
+    val output: String,
+    val succeeded: Boolean = true
 )
 
 private data class LocalToolCall(
@@ -1082,7 +1087,7 @@ private data class LocalToolCall(
     val arguments: Map<String, String>
 )
 
-private data class LocalToolResult(
+private data class ToolCallResult(
     val index: Int,
     val call: LocalToolCall,
     val output: String,
@@ -1090,51 +1095,51 @@ private data class LocalToolResult(
     val durationMillis: Long
 )
 
-private fun buildLocalTools(context: Context): List<LocalToolDefinition> {
+private fun buildLocalTools(context: Context): List<ToolDefinition> {
     val appContext = context.applicationContext
     return listOf(
-        LocalToolDefinition(toolInfo("current_time.time")) {
-            currentTimeInfo()
+        ToolDefinition(toolInfo("current_time.time")) {
+            ToolExecutionResult(currentTimeInfo())
         },
-        LocalToolDefinition(toolInfo("system.device")) {
-            deviceInfo()
+        ToolDefinition(toolInfo("system.device")) {
+            ToolExecutionResult(deviceInfo())
         },
-        LocalToolDefinition(toolInfo("system.os")) {
-            osInfo()
+        ToolDefinition(toolInfo("system.os")) {
+            ToolExecutionResult(osInfo())
         },
-        LocalToolDefinition(toolInfo("system.battery")) {
-            batteryInfo(appContext)
+        ToolDefinition(toolInfo("system.battery")) {
+            ToolExecutionResult(batteryInfo(appContext))
         },
-        LocalToolDefinition(toolInfo("system.cpu")) {
-            cpuInfo()
+        ToolDefinition(toolInfo("system.cpu")) {
+            ToolExecutionResult(cpuInfo())
         },
-        LocalToolDefinition(toolInfo("system.memory")) {
-            memoryInfo(appContext)
+        ToolDefinition(toolInfo("system.memory")) {
+            ToolExecutionResult(memoryInfo(appContext))
         },
-        LocalToolDefinition(toolInfo("system.display")) {
-            displayInfo(appContext)
+        ToolDefinition(toolInfo("system.display")) {
+            ToolExecutionResult(displayInfo(appContext))
         },
-        LocalToolDefinition(toolInfo("system.network")) {
-            networkInfo(appContext)
+        ToolDefinition(toolInfo("system.network")) {
+            ToolExecutionResult(networkInfo(appContext))
         },
-        LocalToolDefinition(toolInfo("system.thermal")) {
-            thermalInfo(appContext)
+        ToolDefinition(toolInfo("system.thermal")) {
+            ToolExecutionResult(thermalInfo(appContext))
         },
-        LocalToolDefinition(toolInfo("system.app")) {
-            appInfo(appContext)
+        ToolDefinition(toolInfo("system.app")) {
+            ToolExecutionResult(appInfo(appContext))
         }
     )
 }
 
-private fun toolInfo(name: String): LocalToolInfo =
+private fun toolInfo(name: String): ToolInfo =
     LOCAL_TOOL_INFOS.first { it.name == name }
 
-private fun buildLocalToolPrompt(localTools: List<LocalToolDefinition>): String = buildString {
+private fun buildToolPrompt(tools: List<ToolDefinition>): String = buildString {
     appendLine("Local tools are available. To call one or more tools, respond only with one or more blocks:")
     appendLine("<tool_call>{\"name\":\"tool.name\",\"arguments\":{}}</tool_call>")
     appendLine("Do not add prose around tool calls. After tool results are provided, answer normally.")
-    appendLine("Available local tools:")
-    localTools.forEach { tool ->
+    appendLine("Available tools:")
+    tools.forEach { tool ->
         appendLine("- ${tool.info.name}: ${tool.info.description} Parameters JSON schema: ${tool.parameters}")
     }
 }
@@ -1369,14 +1374,14 @@ private fun String.withoutToolCallBlocks(): String {
     return cleaned.toString().trim()
 }
 
-private fun executeLocalTool(
+private suspend fun executeTool(
     index: Int,
     call: LocalToolCall,
-    localTools: List<LocalToolDefinition>
-): LocalToolResult {
+    tools: List<ToolDefinition>
+): ToolCallResult {
     val startedAtMillis = System.currentTimeMillis()
-    val tool = localTools.firstOrNull { it.info.name == call.name }
-        ?: return LocalToolResult(
+    val tool = tools.firstOrNull { it.info.name == call.name }
+        ?: return ToolCallResult(
             index = index,
             call = call,
             output = "Local tool is not enabled or does not exist: ${call.name}",
@@ -1385,15 +1390,16 @@ private fun executeLocalTool(
         )
 
     return try {
-        LocalToolResult(
+        val execution = tool.execute(call.arguments)
+        ToolCallResult(
             index = index,
             call = call,
-            output = tool.execute(call.arguments),
-            succeeded = true,
+            output = execution.output,
+            succeeded = execution.succeeded,
             durationMillis = System.currentTimeMillis() - startedAtMillis
         )
     } catch (e: Exception) {
-        LocalToolResult(
+        ToolCallResult(
             index = index,
             call = call,
             output = e.message ?: "Local tool failed.",
@@ -1403,7 +1409,7 @@ private fun executeLocalTool(
     }
 }
 
-private fun buildLocalToolResultPrompt(results: List<LocalToolResult>): String = buildString {
+private fun buildLocalToolResultPrompt(results: List<ToolCallResult>): String = buildString {
     appendLine("Local tool results")
     results.forEach { result ->
         appendLine()
@@ -1418,7 +1424,7 @@ private fun buildLocalToolResultPrompt(results: List<LocalToolResult>): String =
     append("Use these results to answer the user's previous request. Do not call another local tool unless a new tool result is needed.")
 }
 
-private fun LocalToolResult.toUiToolCall(): UiToolCall =
+private fun ToolCallResult.toUiToolCall(): UiToolCall =
     UiToolCall(
         index = index,
         name = call.name,

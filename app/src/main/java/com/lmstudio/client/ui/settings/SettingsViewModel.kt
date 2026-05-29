@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lmstudio.client.data.preferences.AppPreferences
+import com.lmstudio.client.data.preferences.SearchProvider
 import com.lmstudio.client.ui.chat.LOCAL_TOOL_INFOS
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,6 +16,8 @@ import kotlinx.coroutines.launch
 data class SettingsUiState(
     val baseUrl: String = AppPreferences.DEFAULT_BASE_URL,
     val bearerToken: String = "",
+    val searchProvider: SearchProvider = SearchProvider.DISABLED,
+    val braveSearchApiKey: String = "",
     val localToolRounds: Int = AppPreferences.DEFAULT_LOCAL_TOOL_ROUNDS,
     val enabledLocalTools: Set<String> = LOCAL_TOOL_INFOS.map { it.name }.toSet()
 )
@@ -45,6 +48,16 @@ class SettingsViewModel(
             val rounds = preferences.localToolRounds.first()
             _uiState.update { it.copy(localToolRounds = rounds) }
         }
+        viewModelScope.launch {
+            val provider = preferences.searchProvider.first()
+            val braveKey = preferences.braveSearchApiKey.first()
+            _uiState.update {
+                it.copy(
+                    searchProvider = provider,
+                    braveSearchApiKey = braveKey
+                )
+            }
+        }
     }
 
     fun updateBaseUrl(url: String) {
@@ -53,6 +66,14 @@ class SettingsViewModel(
 
     fun updateBearerToken(token: String) {
         _uiState.update { it.copy(bearerToken = token) }
+    }
+
+    fun updateSearchProvider(provider: SearchProvider) {
+        _uiState.update { it.copy(searchProvider = provider) }
+    }
+
+    fun updateBraveSearchApiKey(apiKey: String) {
+        _uiState.update { it.copy(braveSearchApiKey = apiKey) }
     }
 
     fun updateLocalToolEnabled(name: String, enabled: Boolean) {
@@ -81,6 +102,8 @@ class SettingsViewModel(
         viewModelScope.launch {
             preferences.saveBaseUrl(_uiState.value.baseUrl.trim())
             preferences.saveBearerToken(_uiState.value.bearerToken.trim())
+            preferences.saveSearchProvider(_uiState.value.searchProvider)
+            preferences.saveBraveSearchApiKey(_uiState.value.braveSearchApiKey.trim())
             preferences.saveLocalToolRounds(_uiState.value.localToolRounds)
             preferences.saveDisabledLocalToolNames(
                 LOCAL_TOOL_INFOS.map { it.name }.toSet() - _uiState.value.enabledLocalTools

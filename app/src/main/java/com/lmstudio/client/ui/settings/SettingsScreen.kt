@@ -15,6 +15,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -38,6 +40,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.lmstudio.client.data.preferences.AppPreferences
+import com.lmstudio.client.data.preferences.SearchProvider
 import com.lmstudio.client.ui.chat.LOCAL_TOOL_INFOS
 import kotlin.math.roundToInt
 
@@ -49,6 +52,7 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var tokenVisible by remember { mutableStateOf(false) }
+    var braveKeyVisible by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -113,6 +117,47 @@ fun SettingsScreen(
             Spacer(Modifier.height(16.dp))
 
             Text(
+                text = "Web Search",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "Search providers are configured here. Web search tools will use the selected provider when enabled.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(8.dp))
+            SearchProviderPicker(
+                selectedProvider = uiState.searchProvider,
+                onProviderSelected = viewModel::updateSearchProvider
+            )
+            if (uiState.searchProvider == SearchProvider.BRAVE) {
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = uiState.braveSearchApiKey,
+                    onValueChange = viewModel::updateBraveSearchApiKey,
+                    label = { Text("Brave Search API Key") },
+                    placeholder = { Text("Required for Brave Search") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    visualTransformation = if (braveKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { braveKeyVisible = !braveKeyVisible }) {
+                            Icon(
+                                imageVector = if (braveKeyVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                contentDescription = if (braveKeyVisible) "Hide API key" else "Show API key"
+                            )
+                        }
+                    },
+                    supportingText = { Text("Stored locally and sent only to the configured Brave Search endpoint.") }
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(16.dp))
+
+            Text(
                 text = "Local MCP Tools",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.primary
@@ -164,6 +209,46 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+    }
+}
+
+@Composable
+private fun SearchProviderPicker(
+    selectedProvider: SearchProvider,
+    onProviderSelected: (SearchProvider) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Button(
+            onClick = { expanded = true },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(selectedProvider.label)
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            SearchProvider.entries.forEach { provider ->
+                DropdownMenuItem(
+                    text = {
+                        Column {
+                            Text(provider.label)
+                            Text(
+                                text = provider.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    },
+                    onClick = {
+                        onProviderSelected(provider)
+                        expanded = false
+                    }
+                )
+            }
         }
     }
 }

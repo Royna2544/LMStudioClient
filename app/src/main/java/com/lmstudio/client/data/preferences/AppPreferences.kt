@@ -13,6 +13,20 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "app_settings")
 
+enum class SearchProvider(
+    val id: String,
+    val label: String,
+    val description: String
+) {
+    DISABLED("disabled", "Disabled", "Web search tools are not advertised."),
+    BRAVE("brave", "Brave Search", "Use Brave Search API for web results.");
+
+    companion object {
+        fun fromId(id: String): SearchProvider =
+            entries.firstOrNull { it.id == id } ?: DISABLED
+    }
+}
+
 class AppPreferences(context: Context) {
 
     private val dataStore = context.dataStore
@@ -24,6 +38,8 @@ class AppPreferences(context: Context) {
         private val CHAT_HISTORY_KEY = stringPreferencesKey("chat_history")
         private val DISABLED_LOCAL_TOOLS_KEY = stringSetPreferencesKey("disabled_local_tools")
         private val LOCAL_TOOL_ROUNDS_KEY = intPreferencesKey("local_tool_rounds")
+        private val SEARCH_PROVIDER_KEY = stringPreferencesKey("search_provider")
+        private val BRAVE_SEARCH_API_KEY_KEY = stringPreferencesKey("brave_search_api_key")
         const val DEFAULT_BASE_URL = "http://10.0.2.2:1234"
         const val DEFAULT_LOCAL_TOOL_ROUNDS = 8
         const val MIN_LOCAL_TOOL_ROUNDS = 1
@@ -55,6 +71,14 @@ class AppPreferences(context: Context) {
             .coerceIn(MIN_LOCAL_TOOL_ROUNDS, MAX_LOCAL_TOOL_ROUNDS)
     }
 
+    val searchProvider: Flow<SearchProvider> = dataStore.data.map { prefs ->
+        SearchProvider.fromId(prefs[SEARCH_PROVIDER_KEY] ?: SearchProvider.DISABLED.id)
+    }
+
+    val braveSearchApiKey: Flow<String> = dataStore.data.map { prefs ->
+        prefs[BRAVE_SEARCH_API_KEY_KEY] ?: ""
+    }
+
     suspend fun saveBaseUrl(url: String) {
         dataStore.edit { prefs -> prefs[BASE_URL_KEY] = url }
     }
@@ -79,5 +103,13 @@ class AppPreferences(context: Context) {
         dataStore.edit { prefs ->
             prefs[LOCAL_TOOL_ROUNDS_KEY] = rounds.coerceIn(MIN_LOCAL_TOOL_ROUNDS, MAX_LOCAL_TOOL_ROUNDS)
         }
+    }
+
+    suspend fun saveSearchProvider(provider: SearchProvider) {
+        dataStore.edit { prefs -> prefs[SEARCH_PROVIDER_KEY] = provider.id }
+    }
+
+    suspend fun saveBraveSearchApiKey(apiKey: String) {
+        dataStore.edit { prefs -> prefs[BRAVE_SEARCH_API_KEY_KEY] = apiKey }
     }
 }
