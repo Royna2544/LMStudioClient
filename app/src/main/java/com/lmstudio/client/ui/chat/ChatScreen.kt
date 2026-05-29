@@ -673,14 +673,17 @@ fun ChatScreen(
                         .width(HISTORY_SPLITTER_WIDTH)
                         .fillMaxSize()
                         .pointerInput(availableWidth) {
-                            detectHorizontalDragGestures { change, dragAmount ->
+                            var dragWidthPx = with(density) { historyPaneWidthValue.dp.toPx() }
+                            detectHorizontalDragGestures(
+                                onDragStart = {
+                                    dragWidthPx = with(density) { historyPaneWidthValue.dp.toPx() }
+                                }
+                            ) { change, dragAmount ->
                                 change.consume()
-                                val currentPx = with(density) { historyPaneWidthValue.dp.toPx() }
+                                dragWidthPx = (dragWidthPx + dragAmount)
+                                    .coerceIn(minHistoryWidthPx, maxHistoryWidthPx)
                                 historyPaneWidthOverride = with(density) {
-                                    (currentPx + dragAmount)
-                                        .coerceIn(minHistoryWidthPx, maxHistoryWidthPx)
-                                        .toDp()
-                                        .value
+                                    dragWidthPx.toDp().value
                                 }
                             }
                         }
