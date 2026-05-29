@@ -1156,6 +1156,6 @@ private const val THINK_OPEN_TAG = "<think>"
 private const val THINK_CLOSE_TAG = "</think>"
 private const val TOOL_STATUS_MESSAGE = "model is calling a tool request... `%s`"
 private val TOOL_CALL_REGEX = Regex(
-    pattern = "<tool_call>\\s*(\\{.*?})\\s*</tool_call>",
+    pattern = "<tool_call>\\s*(\\{[\\s\\S]*})\\s*</tool_call>",
     options = setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
 )
