@@ -79,7 +79,11 @@ fun MessageBubble(
             horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
         ) {
             if (!isUser && (thinkingContent.isNotEmpty() || isThinking)) {
-                ThinkingBlock(content = thinkingContent, isThinking = isThinking)
+                ThinkingBlock(
+                    content = thinkingContent,
+                    isThinking = isThinking,
+                    isStreaming = isStreaming
+                )
             }
 
             val shouldShowContentBubble = if (isUser) {
@@ -297,11 +301,19 @@ private fun ResponseActions(
 }
 
 @Composable
-private fun ThinkingBlock(content: String, isThinking: Boolean) {
+private fun ThinkingBlock(
+    content: String,
+    isThinking: Boolean,
+    isStreaming: Boolean
+) {
     var expanded by remember { mutableStateOf(true) }
 
-    LaunchedEffect(isThinking) {
-        if (!isThinking) expanded = false
+    LaunchedEffect(isThinking, isStreaming) {
+        if (isThinking || isStreaming) {
+            expanded = true
+        } else {
+            expanded = false
+        }
     }
 
     Column(modifier = Modifier.widthIn(max = 300.dp).padding(bottom = 4.dp)) {
