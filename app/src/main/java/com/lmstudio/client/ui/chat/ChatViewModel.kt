@@ -137,6 +137,7 @@ class ChatViewModel(
                 )
             }
             historyLoaded = true
+            persistChatHistory()
         }
         viewModelScope.launch {
             // Await first values so loadModels() uses the real saved URL/token
@@ -816,24 +817,74 @@ private fun parseSavedSessions(json: String): List<ChatSession> = try {
         val sessions = Gson().fromJson<List<ChatSession>>(json, CHAT_SESSION_LIST_TYPE).orEmpty()
         sessions
             .filterNot { it.isTemporary }
-            .map { it.forRestoredHistory() }
+            .mapNotNull { it.sanitizeForHistory() }
             .sortedByDescending { it.updatedAt }
     }
 } catch (_: Exception) {
     emptyList()
 }
 
-private fun ChatSession.forRestoredHistory(): ChatSession =
+private fun ChatSession.forSavedHistory(): ChatSession =
     copy(
-        messages = messages.map { it.copy(isThinking = false, isStreaming = false) },
+        title = runCatching { title }.getOrNull()?.takeIf { it.isNotBlank() } ?: DEFAULT_CHAT_TITLE,
+        messages = runCatching { messages }.getOrNull()
+            ?.mapNotNull { it.sanitizeForHistory() }
+            .orEmpty(),
         isTemporary = false
     )
 
-private fun ChatSession.forSavedHistory(): ChatSession =
-    copy(
-        messages = messages.map { it.copy(isThinking = false, isStreaming = false) },
+private fun ChatSession.sanitizeForHistory(): ChatSession? {
+    val safeId = runCatching { id }.getOrNull()?.takeIf { it.isNotBlank() }
+        ?: UUID.randomUUID().toString()
+    val safeTitle = runCatching { title }.getOrNull()?.takeIf { it.isNotBlank() }
+        ?: DEFAULT_CHAT_TITLE
+    val safeMessages = runCatching { messages }.getOrNull()
+        ?.mapNotNull { it.sanitizeForHistory() }
+        .orEmpty()
+    if (safeMessages.isEmpty() && safeTitle == DEFAULT_CHAT_TITLE) return null
+
+    return copy(
+        id = safeId,
+        title = safeTitle,
+        messages = safeMessages,
+        remoteResponseId = runCatching { remoteResponseId }.getOrNull(),
+        updatedAt = runCatching { updatedAt }.getOrDefault(System.currentTimeMillis()),
         isTemporary = false
     )
+}
+
+private fun UiMessage.sanitizeForHistory(): UiMessage? {
+    val safeRole = runCatching { role }.getOrNull()
+        ?.takeIf { it == "user" || it == "assistant" || it == "tool" }
+        ?: return null
+    val safeAttachments = runCatching { requestAttachments }.getOrNull()
+        ?.mapNotNull { it.sanitizeForHistory() }
+        .orEmpty()
+
+    return copy(
+        id = runCatching { id }.getOrNull()?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString(),
+        role = safeRole,
+        content = runCatching { content }.getOrNull().orEmpty(),
+        thinkingContent = runCatching { thinkingContent }.getOrNull().orEmpty(),
+        errorMessage = runCatching { errorMessage }.getOrNull(),
+        requestText = runCatching { requestText }.getOrNull(),
+        requestAttachments = safeAttachments,
+        isThinking = false,
+        isStreaming = false
+    )
+}
+
+private fun PendingAttachment.sanitizeForHistory(): PendingAttachment? {
+    val safeType = runCatching { type }.getOrNull() ?: return null
+    return copy(
+        id = runCatching { id }.getOrNull()?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString(),
+        name = runCatching { name }.getOrNull()?.takeIf { it.isNotBlank() } ?: "Attachment",
+        type = safeType,
+        mimeType = runCatching { mimeType }.getOrNull()?.takeIf { it.isNotBlank() } ?: "application/octet-stream",
+        dataUrl = runCatching { dataUrl }.getOrNull(),
+        text = runCatching { text }.getOrNull()
+    )
+}
 
 private fun generateChatTitle(text: String, attachments: List<PendingAttachment>): String {
     val normalized = text.replace(Regex("\\s+"), " ").trim()
