@@ -263,7 +263,11 @@ fun ChatScreen(
                                     )
                                     val briefInfo = selectedModelData?.let { m ->
                                         buildString {
-                                            m.quantization?.takeIf { it.isNotBlank() }?.let { append(it) }
+                                            if (m.isLoaded) append("Loaded")
+                                            m.quantization?.takeIf { it.isNotBlank() }?.let {
+                                                if (isNotEmpty()) append(" · ")
+                                                append(it)
+                                            }
                                             val ctx = m.maxContextLength.briefContextLength()
                                             if (ctx.isNotBlank()) {
                                                 if (isNotEmpty()) append(" · ")
@@ -502,6 +506,7 @@ fun ChatScreen(
                                     generationSeconds = message.generationSeconds(),
                                     toolCalls = message.toolCalls,
                                     isThinking = message.isThinking,
+                                    isModelLoading = message.isModelLoading,
                                     isStreaming = message.isStreaming,
                                     foldThinkingByDefault = uiState.foldThinkingByDefault,
                                     canEditUserMessage = message.id == editableUserMessageId,

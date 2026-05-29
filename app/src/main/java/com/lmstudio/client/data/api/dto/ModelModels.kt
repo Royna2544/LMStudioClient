@@ -17,6 +17,7 @@ data class NativeModelData(
     @SerializedName("display_name") val displayName: String? = null,
     val architecture: String? = null,
     val quantization: NativeQuantization? = null,
+    @SerializedName("loaded_instances") val loadedInstances: List<NativeLoadedModelInstance>? = null,
     @SerializedName("max_context_length") val maxContextLength: Long = 0L,
     val description: String? = null,
     val capabilities: NativeModelCapabilities? = null
@@ -29,9 +30,16 @@ data class NativeModelData(
         quantization = quantization?.name,
         maxContextLength = maxContextLength,
         description = description ?: displayName,
-        capabilities = capabilities?.toModelCapabilities()
+        capabilities = capabilities?.toModelCapabilities(),
+        loadedInstanceIds = loadedInstances.orEmpty().mapIndexed { index, instance ->
+            instance.id?.takeIf { it.isNotBlank() } ?: "loaded-$index"
+        }
     )
 }
+
+data class NativeLoadedModelInstance(
+    val id: String? = null
+)
 
 data class NativeQuantization(
     val name: String? = null,
@@ -57,8 +65,12 @@ data class ModelData(
     val quantization: String? = null,
     @SerializedName("max_context_length") val maxContextLength: Long = 0L,
     val description: String? = null,
-    val capabilities: ModelCapabilities? = null
-)
+    val capabilities: ModelCapabilities? = null,
+    val loadedInstanceIds: List<String> = emptyList()
+) {
+    val isLoaded: Boolean
+        get() = loadedInstanceIds.isNotEmpty()
+}
 
 data class ModelCapabilities(
     val vision: Boolean = false,

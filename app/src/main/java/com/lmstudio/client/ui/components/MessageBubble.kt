@@ -60,6 +60,7 @@ fun MessageBubble(
     generationSeconds: Double? = null,
     toolCalls: List<UiToolCall> = emptyList(),
     isThinking: Boolean = false,
+    isModelLoading: Boolean = false,
     isStreaming: Boolean = false,
     foldThinkingByDefault: Boolean = true,
     canEditUserMessage: Boolean = false,
@@ -82,10 +83,11 @@ fun MessageBubble(
             },
             horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
         ) {
-            if (!isUser && (thinkingContent.isNotEmpty() || isThinking)) {
+            if (!isUser && (thinkingContent.isNotEmpty() || isThinking || isModelLoading)) {
                 ThinkingBlock(
                     content = thinkingContent,
                     isThinking = isThinking,
+                    isModelLoading = isModelLoading,
                     foldByDefault = foldThinkingByDefault
                 )
             }
@@ -93,7 +95,7 @@ fun MessageBubble(
             val shouldShowContentBubble = if (isUser) {
                 content.isNotBlank()
             } else {
-                content.isNotEmpty() || errorMessage != null || !isThinking
+                content.isNotEmpty() || errorMessage != null || (!isThinking && !isModelLoading && !isStreaming)
             }
 
             if (shouldShowContentBubble) {
@@ -121,7 +123,7 @@ fun MessageBubble(
                                 fontSize = 15.sp
                             )
                         } else {
-                            val displayText = if (isStreaming && !isThinking) "$content▊" else content
+                            val displayText = if (isStreaming && !isThinking && content.isNotEmpty()) "$content▊" else content
                             MarkdownText(
                                 content = errorMessage ?: displayText,
                                 color = when {
@@ -385,12 +387,13 @@ private fun ResponseActions(
 private fun ThinkingBlock(
     content: String,
     isThinking: Boolean,
+    isModelLoading: Boolean,
     foldByDefault: Boolean
 ) {
-    var expanded by remember { mutableStateOf(isThinking || !foldByDefault) }
+    var expanded by remember { mutableStateOf(isThinking || isModelLoading || !foldByDefault) }
 
-    LaunchedEffect(isThinking, foldByDefault) {
-        expanded = isThinking || !foldByDefault
+    LaunchedEffect(isThinking, isModelLoading, foldByDefault) {
+        expanded = isThinking || isModelLoading || !foldByDefault
     }
 
     Column(modifier = Modifier.widthIn(max = 300.dp).padding(bottom = 4.dp)) {
@@ -400,7 +403,7 @@ private fun ThinkingBlock(
                 .padding(vertical = 4.dp, horizontal = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (isThinking) {
+            if (isThinking || isModelLoading) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(11.dp),
                     strokeWidth = 1.5.dp,
@@ -408,7 +411,7 @@ private fun ThinkingBlock(
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    "Thinking…",
+                    if (isModelLoading) "(Re)Loading model..." else "Thinking…",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.outline
                 )

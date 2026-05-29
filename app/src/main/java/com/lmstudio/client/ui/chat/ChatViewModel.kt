@@ -13,6 +13,7 @@ import android.os.PowerManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import androidx.core.content.ContextCompat
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.lmstudio.client.data.api.dto.ChatInputItem
@@ -24,6 +25,7 @@ import com.lmstudio.client.data.preferences.AppPreferences
 import com.lmstudio.client.data.preferences.SearchProvider
 import com.lmstudio.client.data.repository.ChatRepository
 import com.lmstudio.client.data.search.toWebSearchProviderClient
+import com.lmstudio.client.service.GenerationForegroundService
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -94,6 +96,7 @@ data class UiMessage(
     val firstTokenAtMillis: Long? = null,
     val responseCompletedAtMillis: Long? = null,
     val isThinking: Boolean = false,
+    val isModelLoading: Boolean = false,
     val isStreaming: Boolean = false
 )
 
@@ -339,7 +342,6 @@ class ChatViewModel(
         val assistantPlaceholder = UiMessage(
             role = "assistant",
             responseStartedAtMillis = System.currentTimeMillis(),
-            isThinking = true,
             isStreaming = true
         )
         val history = state.messages + userMessage
@@ -402,7 +404,6 @@ class ChatViewModel(
         val assistantPlaceholder = UiMessage(
             role = "assistant",
             responseStartedAtMillis = System.currentTimeMillis(),
-            isThinking = true,
             isStreaming = true
         )
 
@@ -470,6 +471,48 @@ class ChatViewModel(
         persistChatHistory()
     }
 
+    private suspend fun refreshModelLoadedState(
+        baseUrl: String,
+        bearerToken: String,
+        selectedModel: String
+    ): Boolean {
+        val models = repository.getModels(baseUrl, bearerToken).getOrNull() ?: return true
+        _uiState.update { current -> current.copy(availableModels = models) }
+        return models.firstOrNull { it.id == selectedModel }?.isLoaded == true
+    }
+
+    private fun setActiveAssistantStartupState(
+        isModelLoading: Boolean,
+        isThinking: Boolean
+    ) {
+        _uiState.update { current ->
+            val msgs = current.messages.toMutableList()
+            val last = msgs.lastIndex
+            if (last >= 0 && msgs[last].role == "assistant" && msgs[last].isStreaming) {
+                msgs[last] = msgs[last].copy(
+                    isModelLoading = isModelLoading,
+                    isThinking = isThinking
+                )
+            }
+            current.withCurrentSession(messages = msgs)
+        }
+    }
+
+    private fun startGenerationForegroundService() {
+        runCatching {
+            ContextCompat.startForegroundService(
+                applicationContext,
+                GenerationForegroundService.startIntent(applicationContext)
+            )
+        }
+    }
+
+    private fun stopGenerationForegroundService() {
+        runCatching {
+            applicationContext.stopService(Intent(applicationContext, GenerationForegroundService::class.java))
+        }
+    }
+
     private fun startResponseStream(
         baseUrl: String,
         bearerToken: String,
@@ -519,11 +562,14 @@ class ChatViewModel(
             previousResponseId = previousResponseId
         )
 
+        startGenerationForegroundService()
         streamingJob = viewModelScope.launch {
             var thinkTagState = ThinkTagState()
             var receivedResponseContent = false
             var streamFailed = false
             try {
+                val modelLoaded = refreshModelLoadedState(baseUrl, bearerToken, selectedModel)
+                setActiveAssistantStartupState(isModelLoading = !modelLoaded, isThinking = modelLoaded)
                 repository.streamChat(baseUrl, request, bearerToken).collect { token ->
                     if (token.responseId != null) {
                         _uiState.update { it.withCurrentSession(remoteResponseId = token.responseId) }
@@ -556,7 +602,8 @@ class ChatViewModel(
                                 errorMessage = null,
                                 isCanceled = false,
                                 firstTokenAtMillis = firstTokenAt,
-                                isThinking = isThinkingNow
+                                isThinking = isThinkingNow,
+                                isModelLoading = false
                             )
                         }
                         current.withCurrentSession(messages = msgs)
@@ -578,12 +625,14 @@ class ChatViewModel(
                                 isCanceled = userCancelRequested,
                                 responseCompletedAtMillis = System.currentTimeMillis(),
                                 isStreaming = false,
-                                isThinking = false
+                                isThinking = false,
+                                isModelLoading = false
                             )
                         }
                         current.withCurrentSession(messages = msgs).copy(isStreaming = false)
                     }
                     persistChatHistory()
+                    stopGenerationForegroundService()
                     return@launch
                 }
                 streamFailed = true
@@ -601,7 +650,8 @@ class ChatViewModel(
                             isCanceled = userCancelRequested,
                             responseCompletedAtMillis = System.currentTimeMillis(),
                             isStreaming = false,
-                            isThinking = false
+                            isThinking = false,
+                            isModelLoading = false
                         )
                     }
                     current.withCurrentSession(messages = msgs).copy(
@@ -609,6 +659,7 @@ class ChatViewModel(
                     )
                 }
                 persistChatHistory()
+                stopGenerationForegroundService()
             } finally {
                 val flushed = thinkTagState.flush()
                 val pendingToolCalls = if (!streamFailed && activeLocalTools.isNotEmpty()) {
@@ -645,7 +696,6 @@ class ChatViewModel(
                             role = "assistant",
                             thinkingContent = thinkingContent,
                             responseStartedAtMillis = now,
-                            isThinking = true,
                             isStreaming = true
                         )
                         current.withCurrentSession(messages = msgs + assistantPlaceholder)
@@ -702,12 +752,14 @@ class ChatViewModel(
                             else msg.firstTokenAtMillis,
                             responseCompletedAtMillis = System.currentTimeMillis(),
                             isStreaming = false,
-                            isThinking = false
+                            isThinking = false,
+                            isModelLoading = false
                         )
                     }
                     current.withCurrentSession(messages = msgs).copy(isStreaming = false)
                 }
                 persistChatHistory()
+                stopGenerationForegroundService()
             }
         }
     }
@@ -891,6 +943,7 @@ class ChatViewModel(
             userCancelRequested = true
             streamingJob?.cancel()
             _uiState.update { it.copy(notice = GENERATION_CANCELED_NOTICE) }
+            stopGenerationForegroundService()
         }
     }
 
