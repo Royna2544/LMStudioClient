@@ -782,7 +782,7 @@ private fun android.content.ContentResolver.displayName(uri: Uri): String? {
 
 private const val CHAT_BOTTOM_ANCHOR_KEY = "chat-bottom-anchor"
 private val HISTORY_PANE_WIDTH = 320.dp
-private val HISTORY_PANE_BREAKPOINT = 840.dp
+private val HISTORY_PANE_BREAKPOINT = 600.dp
 
 @Composable
 private fun ChatHistoryDrawer(
