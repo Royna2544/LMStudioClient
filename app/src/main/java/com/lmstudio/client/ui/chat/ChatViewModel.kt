@@ -17,7 +17,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlin.math.round
+import java.math.BigDecimal
+import java.math.RoundingMode
 import java.util.UUID
 
 enum class ReasoningMode(val label: String, val apiValue: String?) {
@@ -333,11 +334,11 @@ class ChatViewModel(
             input = input,
             stream = settings.stream,
             systemPrompt = settings.systemPrompt.takeIf { it.isNotBlank() },
-            temperature = settings.temperature.roundToTenths().toDouble(),
-            topP = settings.topP.roundToHundredths().toDouble(),
+            temperature = settings.temperature.toApiDecimal(scale = 2),
+            topP = settings.topP.toApiDecimal(scale = 2),
             topK = settings.topK,
-            minP = settings.minP.roundToHundredths().toDouble(),
-            repeatPenalty = if (settings.repeatPenaltyEnabled) settings.repeatPenalty.roundToTwentieths().toDouble() else null,
+            minP = settings.minP.toApiDecimal(scale = 2),
+            repeatPenalty = if (settings.repeatPenaltyEnabled) settings.repeatPenalty.toApiDecimal(scale = 2) else null,
             reasoning = settings.reasoningMode.apiValue,
             store = settings.saveRemoteHistory,
             previousResponseId = previousResponseId
@@ -510,11 +511,10 @@ class ChatViewModel(
 
 private const val DEFAULT_CHAT_TITLE = "New chat"
 
-private fun Float.roundToTenths(): Float = round(this * 10f) / 10f
-
-private fun Float.roundToHundredths(): Float = round(this * 100f) / 100f
-
-private fun Float.roundToTwentieths(): Float = round(this * 20f) / 20f
+private fun Float.toApiDecimal(scale: Int): Double =
+    BigDecimal.valueOf(toDouble())
+        .setScale(scale, RoundingMode.HALF_UP)
+        .toDouble()
 
 private fun ChatUiState.currentTitle(): String =
     chatSessions.find { it.id == currentChatId }?.title ?: DEFAULT_CHAT_TITLE
