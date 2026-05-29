@@ -83,6 +83,7 @@ data class UiMessage(
     val thinkingContent: String = "",
     val toolCalls: List<UiToolCall> = emptyList(),
     val errorMessage: String? = null,
+    val isCanceled: Boolean = false,
     val requestText: String? = null,
     val requestAttachments: List<PendingAttachment> = emptyList(),
     val responseStartedAtMillis: Long? = null,
@@ -164,6 +165,7 @@ class ChatViewModel(
 
     private val historyGson = Gson()
     private var streamingJob: Job? = null
+    private var userCancelRequested = false
     private var historyLoaded = false
     private var persistHistoryJob: Job? = null
 
@@ -475,6 +477,7 @@ class ChatViewModel(
         allowLocalTools: Boolean
     ) {
         val previousResponseId = if (useRemoteContinuation) remoteResponseId else null
+        userCancelRequested = false
         val activeLocalTools = if (allowLocalTools && remainingLocalToolRounds > 0) {
             buildLocalTools(applicationContext).filter { it.info.name in enabledLocalTools } +
                 buildWebTools(searchProvider, braveSearchApiKey, repository)
@@ -541,6 +544,7 @@ class ChatViewModel(
                                 content = msg.content + parsed.content,
                                 thinkingContent = msg.thinkingContent + parsed.thinking,
                                 errorMessage = null,
+                                isCanceled = false,
                                 firstTokenAtMillis = firstTokenAt,
                                 isThinking = isThinkingNow
                             )
@@ -549,21 +553,50 @@ class ChatViewModel(
                     }
                 }
             } catch (e: Exception) {
-                if (e is kotlinx.coroutines.CancellationException) throw e
+                if (e is kotlinx.coroutines.CancellationException) {
+                    streamFailed = true
+                    _uiState.update { current ->
+                        val msgs = current.messages.toMutableList()
+                        val last = msgs.lastIndex
+                        if (last >= 0 && msgs[last].role == "assistant" && msgs[last].isStreaming) {
+                            msgs[last] = msgs[last].copy(
+                                content = "",
+                                errorMessage = if (userCancelRequested)
+                                    USER_CANCELED_GENERATION_MESSAGE
+                                else
+                                    "Generation canceled.",
+                                isCanceled = userCancelRequested,
+                                responseCompletedAtMillis = System.currentTimeMillis(),
+                                isStreaming = false,
+                                isThinking = false
+                            )
+                        }
+                        current.withCurrentSession(messages = msgs).copy(isStreaming = false)
+                    }
+                    persistChatHistory()
+                    return@launch
+                }
                 streamFailed = true
-                val message = e.message ?: "LM Studio did not return a response."
+                val message = if (userCancelRequested) {
+                    USER_CANCELED_GENERATION_MESSAGE
+                } else {
+                    e.message ?: "LM Studio did not return a response."
+                }
                 _uiState.update { current ->
                     val msgs = current.messages.toMutableList()
                     val last = msgs.lastIndex
                     if (last >= 0 && msgs[last].role == "assistant" && msgs[last].isStreaming) {
                         msgs[last] = msgs[last].copy(
                             errorMessage = message,
+                            isCanceled = userCancelRequested,
                             responseCompletedAtMillis = System.currentTimeMillis(),
                             isStreaming = false,
                             isThinking = false
                         )
                     }
-                    current.withCurrentSession(messages = msgs).copy(error = message)
+                    current.withCurrentSession(messages = msgs).copy(
+                        error = if (userCancelRequested) null else message
+                    )
                 }
                 persistChatHistory()
             } finally {
@@ -670,6 +703,7 @@ class ChatViewModel(
     }
 
     fun stopStreaming() {
+        userCancelRequested = true
         streamingJob?.cancel()
     }
 
@@ -864,6 +898,7 @@ class ChatViewModel(
 
 private const val DEFAULT_CHAT_TITLE = "New chat"
 private const val TEMPORARY_CHAT_TITLE = "Temporary chat"
+private const val USER_CANCELED_GENERATION_MESSAGE = "User canceled generation"
 private val CHAT_SESSION_LIST_TYPE = object : TypeToken<List<ChatSession>>() {}.type
 
 private fun Float.toApiDecimal(scale: Int): Double =
@@ -980,6 +1015,7 @@ private fun UiMessage.sanitizeForHistory(): UiMessage? {
         thinkingContent = runCatching { thinkingContent }.getOrNull().orEmpty(),
         toolCalls = safeToolCalls,
         errorMessage = runCatching { errorMessage }.getOrNull(),
+        isCanceled = runCatching { isCanceled }.getOrDefault(false),
         requestText = runCatching { requestText }.getOrNull(),
         requestAttachments = safeAttachments,
         isThinking = false,

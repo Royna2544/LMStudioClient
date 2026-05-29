@@ -55,6 +55,7 @@ fun MessageBubble(
     attachments: List<PendingAttachment> = emptyList(),
     thinkingContent: String = "",
     errorMessage: String? = null,
+    isCanceled: Boolean = false,
     tttlSeconds: Double? = null,
     generationSeconds: Double? = null,
     toolCalls: List<UiToolCall> = emptyList(),
@@ -91,11 +92,12 @@ fun MessageBubble(
             }
 
             if (shouldShowContentBubble) {
-                val hasError = errorMessage != null
+                val hasError = errorMessage != null && !isCanceled
                 Surface(
                     modifier = if (!isUser && isStreaming) Modifier.fillMaxWidth() else Modifier,
                     color = when {
                         isUser -> MaterialTheme.colorScheme.primary
+                        isCanceled -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
                         hasError -> MaterialTheme.colorScheme.errorContainer
                         else -> MaterialTheme.colorScheme.surfaceVariant
                     },
@@ -117,8 +119,10 @@ fun MessageBubble(
                             val displayText = if (isStreaming && !isThinking) "$content▊" else content
                             MarkdownText(
                                 content = errorMessage ?: displayText,
-                                color = if (hasError) MaterialTheme.colorScheme.onErrorContainer
-                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = when {
+                                    hasError -> MaterialTheme.colorScheme.onErrorContainer
+                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                },
                                 fontSize = 15.sp
                             )
                         }
@@ -138,10 +142,12 @@ fun MessageBubble(
                     onEdit = onEdit
                 )
             } else if (!isStreaming) {
-                ResponseStats(
-                    tttlSeconds = tttlSeconds,
-                    generationSeconds = generationSeconds
-                )
+                if (!isCanceled) {
+                    ResponseStats(
+                        tttlSeconds = tttlSeconds,
+                        generationSeconds = generationSeconds
+                    )
+                }
                 if (toolCalls.isNotEmpty() && errorMessage == null) {
                     ToolCallDetails(toolCalls = toolCalls)
                 }

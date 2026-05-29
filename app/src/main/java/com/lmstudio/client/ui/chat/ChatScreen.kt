@@ -455,6 +455,7 @@ fun ChatScreen(
                                     attachments = message.requestAttachments,
                                     thinkingContent = message.thinkingContent,
                                     errorMessage = message.errorMessage,
+                                    isCanceled = message.isCanceled,
                                     tttlSeconds = message.tttlSeconds(),
                                     generationSeconds = message.generationSeconds(),
                                     toolCalls = message.toolCalls,
