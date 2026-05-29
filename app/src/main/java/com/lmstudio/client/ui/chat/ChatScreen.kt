@@ -672,7 +672,6 @@ fun ChatScreen(
                     modifier = Modifier
                         .width(HISTORY_SPLITTER_WIDTH)
                         .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
                         .pointerInput(availableWidth) {
                             detectHorizontalDragGestures { change, dragAmount ->
                                 change.consume()
@@ -685,7 +684,15 @@ fun ChatScreen(
                                 }
                             }
                         }
-                )
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .width(HISTORY_SPLITTER_LINE_WIDTH)
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
+                    )
+                }
                 mainContent(false, Modifier.weight(1f))
             }
         } else {
@@ -815,7 +822,8 @@ private val HISTORY_PANE_WIDTH = HISTORY_PANE_DEFAULT_WIDTH_VALUE.dp
 private val HISTORY_PANE_MIN_WIDTH = HISTORY_PANE_MIN_WIDTH_VALUE.dp
 private val HISTORY_PANE_MAX_WIDTH = 420.dp
 private val HISTORY_PANE_BREAKPOINT = 600.dp
-private val HISTORY_SPLITTER_WIDTH = 8.dp
+private val HISTORY_SPLITTER_WIDTH = 18.dp
+private val HISTORY_SPLITTER_LINE_WIDTH = 1.dp
 
 @Composable
 private fun ChatHistoryDrawer(
