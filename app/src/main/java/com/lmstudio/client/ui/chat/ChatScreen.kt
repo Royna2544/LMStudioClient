@@ -371,6 +371,8 @@ fun ChatScreen(
                                 isUser = message.role == "user",
                                 thinkingContent = message.thinkingContent,
                                 errorMessage = message.errorMessage,
+                                tttlSeconds = message.tttlSeconds(),
+                                generationSeconds = message.generationSeconds(),
                                 isThinking = message.isThinking,
                                 isStreaming = message.isStreaming,
                                 onCopy = { copyResponseText(context, message.content) },
@@ -508,6 +510,18 @@ fun ChatScreen(
             onDismiss = { showChatSettings = false }
         )
     }
+}
+
+private fun UiMessage.tttlSeconds(): Double? {
+    val startedAt = responseStartedAtMillis ?: return null
+    val firstTokenAt = firstTokenAtMillis ?: return null
+    return (firstTokenAt - startedAt).coerceAtLeast(0L) / 1000.0
+}
+
+private fun UiMessage.generationSeconds(): Double? {
+    val startedAt = responseStartedAtMillis ?: return null
+    val completedAt = responseCompletedAtMillis ?: return null
+    return (completedAt - startedAt).coerceAtLeast(0L) / 1000.0
 }
 
 private fun copyResponseText(context: Context, text: String) {

@@ -43,6 +43,8 @@ fun MessageBubble(
     isUser: Boolean,
     thinkingContent: String = "",
     errorMessage: String? = null,
+    tttlSeconds: Double? = null,
+    generationSeconds: Double? = null,
     isThinking: Boolean = false,
     isStreaming: Boolean = false,
     onCopy: () -> Unit = {},
@@ -99,6 +101,10 @@ fun MessageBubble(
             }
 
             if (!isUser && !isStreaming) {
+                ResponseStats(
+                    tttlSeconds = tttlSeconds,
+                    generationSeconds = generationSeconds
+                )
                 ResponseActions(
                     canCopyOrShare = content.isNotBlank(),
                     onCopy = onCopy,
@@ -108,6 +114,25 @@ fun MessageBubble(
             }
         }
     }
+}
+
+@Composable
+private fun ResponseStats(
+    tttlSeconds: Double?,
+    generationSeconds: Double?
+) {
+    val stats = buildList {
+        tttlSeconds?.let { add("TTTL %.1fs".format(it)) }
+        generationSeconds?.let { add("Generated %.1fs".format(it)) }
+    }
+    if (stats.isEmpty()) return
+
+    Text(
+        text = stats.joinToString(" · "),
+        modifier = Modifier.padding(top = 5.dp, start = 2.dp),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.outline
+    )
 }
 
 @Composable

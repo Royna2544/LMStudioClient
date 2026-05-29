@@ -47,6 +47,9 @@ data class UiMessage(
     val errorMessage: String? = null,
     val requestText: String? = null,
     val requestAttachments: List<PendingAttachment> = emptyList(),
+    val responseStartedAtMillis: Long? = null,
+    val firstTokenAtMillis: Long? = null,
+    val responseCompletedAtMillis: Long? = null,
     val isThinking: Boolean = false,
     val isStreaming: Boolean = false
 )
@@ -218,7 +221,12 @@ class ChatViewModel(
             requestText = text,
             requestAttachments = attachments
         )
-        val assistantPlaceholder = UiMessage(role = "assistant", isStreaming = true)
+        val assistantPlaceholder = UiMessage(
+            role = "assistant",
+            responseStartedAtMillis = System.currentTimeMillis(),
+            isThinking = true,
+            isStreaming = true
+        )
         val history = state.messages + userMessage
         val generatedTitle = if (state.messages.none { it.role == "user" }) {
             generateChatTitle(text, attachments)
@@ -270,7 +278,12 @@ class ChatViewModel(
         val retryText = userMessage.requestText ?: userMessage.content
         val retryAttachments = userMessage.requestAttachments
         val history = state.messages.take(assistantIndex)
-        val assistantPlaceholder = UiMessage(role = "assistant", isStreaming = true)
+        val assistantPlaceholder = UiMessage(
+            role = "assistant",
+            responseStartedAtMillis = System.currentTimeMillis(),
+            isThinking = true,
+            isStreaming = true
+        )
 
         _uiState.update { current ->
             current.copy(
@@ -353,10 +366,18 @@ class ChatViewModel(
                         val last = msgs.lastIndex
                         if (last >= 0 && msgs[last].role == "assistant") {
                             val msg = msgs[last]
+                            val firstTokenAt = if (msg.firstTokenAtMillis == null &&
+                                (parsed.content.isNotEmpty() || parsed.thinking.isNotEmpty())
+                            ) {
+                                System.currentTimeMillis()
+                            } else {
+                                msg.firstTokenAtMillis
+                            }
                             msgs[last] = msg.copy(
                                 content = msg.content + parsed.content,
                                 thinkingContent = msg.thinkingContent + parsed.thinking,
                                 errorMessage = null,
+                                firstTokenAtMillis = firstTokenAt,
                                 isThinking = isThinkingNow
                             )
                         }
@@ -372,6 +393,7 @@ class ChatViewModel(
                     if (last >= 0 && msgs[last].role == "assistant" && msgs[last].isStreaming) {
                         msgs[last] = msgs[last].copy(
                             errorMessage = message,
+                            responseCompletedAtMillis = System.currentTimeMillis(),
                             isStreaming = false,
                             isThinking = false
                         )
@@ -392,6 +414,10 @@ class ChatViewModel(
                             errorMessage = if (!receivedResponseContent && !hasFlushedContent)
                                 msg.errorMessage ?: "LM Studio did not return a response."
                             else msg.errorMessage,
+                            firstTokenAtMillis = if (msg.firstTokenAtMillis == null && hasFlushedContent)
+                                System.currentTimeMillis()
+                            else msg.firstTokenAtMillis,
+                            responseCompletedAtMillis = System.currentTimeMillis(),
                             isStreaming = false,
                             isThinking = false
                         )
