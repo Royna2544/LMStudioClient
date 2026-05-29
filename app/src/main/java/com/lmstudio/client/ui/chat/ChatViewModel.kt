@@ -593,7 +593,7 @@ private fun buildNativeInput(
     if (attachments.none { it.type == PendingAttachmentType.IMAGE }) return prompt
 
     return buildList {
-        add(ChatInputItem(type = "message", content = prompt))
+        add(ChatInputItem(type = "text", content = prompt))
         attachments.filter { it.type == PendingAttachmentType.IMAGE }.forEach { attachment ->
             attachment.dataUrl?.let { dataUrl ->
                 add(ChatInputItem(type = "image", dataUrl = dataUrl))
