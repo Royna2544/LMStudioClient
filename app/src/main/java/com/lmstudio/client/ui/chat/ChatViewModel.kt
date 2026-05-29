@@ -425,9 +425,8 @@ class ChatViewModel(
     }
 
     fun editUserMessage(messageId: String) {
+        cancelActiveGeneration()
         _uiState.update { current ->
-            if (current.isStreaming) return@update current
-
             val messageIndex = current.messages.indexOfFirst {
                 it.id == messageId && it.role == "user"
             }
@@ -455,7 +454,7 @@ class ChatViewModel(
                 messages = remainingMessages,
                 remoteResponseId = null,
                 title = restoredTitle
-            )
+            ).copy(isStreaming = false)
         }
         persistChatHistory()
     }
@@ -703,11 +702,11 @@ class ChatViewModel(
     }
 
     fun stopStreaming() {
-        userCancelRequested = true
-        streamingJob?.cancel()
+        cancelActiveGeneration()
     }
 
     fun clearMessages() {
+        cancelActiveGeneration()
         _uiState.update {
             val title = if (it.isTemporaryChat) TEMPORARY_CHAT_TITLE else DEFAULT_CHAT_TITLE
             it.copy(
@@ -721,6 +720,7 @@ class ChatViewModel(
                     remoteResponseId = null,
                     title = title
                 )
+                .copy(isStreaming = false)
         }
         persistChatHistory()
     }
@@ -734,6 +734,7 @@ class ChatViewModel(
     }
 
     fun startNewChat() {
+        cancelActiveGeneration()
         _uiState.update { current ->
             if (!current.isTemporaryChat && current.messages.isEmpty() && current.currentTitle() == DEFAULT_CHAT_TITLE) {
                 current.copy(
@@ -742,7 +743,8 @@ class ChatViewModel(
                     error = null,
                     remoteResponseId = null,
                     isTemporaryChat = false,
-                    temporarySession = null
+                    temporarySession = null,
+                    isStreaming = false
                 )
             } else {
                 val session = ChatSession()
@@ -755,7 +757,8 @@ class ChatViewModel(
                     error = null,
                     remoteResponseId = null,
                     isTemporaryChat = false,
-                    temporarySession = null
+                    temporarySession = null,
+                    isStreaming = false
                 )
             }
         }
@@ -763,9 +766,8 @@ class ChatViewModel(
     }
 
     fun startTemporaryChat() {
+        cancelActiveGeneration()
         _uiState.update { current ->
-            if (current.isStreaming) return@update current
-
             val session = ChatSession(
                 title = TEMPORARY_CHAT_TITLE,
                 isTemporary = true
@@ -778,15 +780,15 @@ class ChatViewModel(
                 error = null,
                 remoteResponseId = null,
                 isTemporaryChat = true,
-                temporarySession = session
+                temporarySession = session,
+                isStreaming = false
             )
         }
     }
 
     fun discardTemporaryChat() {
         if (!_uiState.value.isTemporaryChat) return
-        userCancelRequested = true
-        streamingJob?.cancel()
+        cancelActiveGeneration()
         _uiState.update { current ->
             if (!current.isTemporaryChat) return@update current
 
@@ -808,22 +810,20 @@ class ChatViewModel(
     }
 
     fun selectChat(chatId: String) {
+        cancelActiveGeneration()
         _uiState.update { current ->
-            if (current.isStreaming) {
-                current
-            } else {
-                val session = current.chatSessions.find { it.id == chatId } ?: return@update current
-                current.copy(
-                    currentChatId = session.id,
-                    messages = session.messages,
-                    inputText = "",
-                    pendingAttachments = emptyList(),
-                    error = null,
-                    remoteResponseId = session.remoteResponseId,
-                    isTemporaryChat = false,
-                    temporarySession = null
-                )
-            }
+            val session = current.chatSessions.find { it.id == chatId } ?: return@update current
+            current.copy(
+                currentChatId = session.id,
+                messages = session.messages,
+                inputText = "",
+                pendingAttachments = emptyList(),
+                error = null,
+                remoteResponseId = session.remoteResponseId,
+                isTemporaryChat = false,
+                temporarySession = null,
+                isStreaming = false
+            )
         }
     }
 
@@ -847,9 +847,8 @@ class ChatViewModel(
     }
 
     fun deleteChat(chatId: String) {
+        cancelActiveGeneration()
         _uiState.update { current ->
-            if (current.isStreaming) return@update current
-
             val remainingSessions = current.chatSessions.filterNot { it.id == chatId }
             if (chatId == current.currentChatId) {
                 val freshSession = ChatSession()
@@ -862,13 +861,21 @@ class ChatViewModel(
                     error = null,
                     remoteResponseId = null,
                     isTemporaryChat = false,
-                    temporarySession = null
+                    temporarySession = null,
+                    isStreaming = false
                 )
             } else {
                 current.copy(chatSessions = remainingSessions)
             }
         }
         persistChatHistory()
+    }
+
+    private fun cancelActiveGeneration() {
+        if (streamingJob?.isActive == true) {
+            userCancelRequested = true
+            streamingJob?.cancel()
+        }
     }
 
     private fun persistChatHistory(state: ChatUiState = _uiState.value) {
