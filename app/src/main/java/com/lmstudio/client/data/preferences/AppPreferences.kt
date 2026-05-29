@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -22,7 +23,11 @@ class AppPreferences(context: Context) {
         private val BEARER_TOKEN_KEY = stringPreferencesKey("bearer_token")
         private val CHAT_HISTORY_KEY = stringPreferencesKey("chat_history")
         private val DISABLED_LOCAL_TOOLS_KEY = stringSetPreferencesKey("disabled_local_tools")
+        private val LOCAL_TOOL_ROUNDS_KEY = intPreferencesKey("local_tool_rounds")
         const val DEFAULT_BASE_URL = "http://10.0.2.2:1234"
+        const val DEFAULT_LOCAL_TOOL_ROUNDS = 8
+        const val MIN_LOCAL_TOOL_ROUNDS = 1
+        const val MAX_LOCAL_TOOL_ROUNDS = 20
     }
 
     val baseUrl: Flow<String> = dataStore.data.map { prefs ->
@@ -45,6 +50,11 @@ class AppPreferences(context: Context) {
         prefs[DISABLED_LOCAL_TOOLS_KEY] ?: emptySet()
     }
 
+    val localToolRounds: Flow<Int> = dataStore.data.map { prefs ->
+        (prefs[LOCAL_TOOL_ROUNDS_KEY] ?: DEFAULT_LOCAL_TOOL_ROUNDS)
+            .coerceIn(MIN_LOCAL_TOOL_ROUNDS, MAX_LOCAL_TOOL_ROUNDS)
+    }
+
     suspend fun saveBaseUrl(url: String) {
         dataStore.edit { prefs -> prefs[BASE_URL_KEY] = url }
     }
@@ -63,5 +73,11 @@ class AppPreferences(context: Context) {
 
     suspend fun saveDisabledLocalToolNames(names: Set<String>) {
         dataStore.edit { prefs -> prefs[DISABLED_LOCAL_TOOLS_KEY] = names }
+    }
+
+    suspend fun saveLocalToolRounds(rounds: Int) {
+        dataStore.edit { prefs ->
+            prefs[LOCAL_TOOL_ROUNDS_KEY] = rounds.coerceIn(MIN_LOCAL_TOOL_ROUNDS, MAX_LOCAL_TOOL_ROUNDS)
+        }
     }
 }

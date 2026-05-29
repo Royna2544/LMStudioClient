@@ -22,6 +22,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -36,7 +37,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.lmstudio.client.data.preferences.AppPreferences
 import com.lmstudio.client.ui.chat.LOCAL_TOOL_INFOS
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -121,6 +124,11 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(8.dp))
+            LocalToolRoundsControl(
+                rounds = uiState.localToolRounds,
+                onRoundsChange = viewModel::updateLocalToolRounds
+            )
+            Spacer(Modifier.height(8.dp))
             LOCAL_TOOL_INFOS.forEach { tool ->
                 LocalToolToggleRow(
                     name = tool.name,
@@ -157,6 +165,44 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+    }
+}
+
+@Composable
+private fun LocalToolRoundsControl(
+    rounds: Int,
+    onRoundsChange: (Int) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Max tool rounds",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "Limits repeated tool-call loops in one user turn.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Text(
+                text = rounds.toString(),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+        Slider(
+            value = rounds.toFloat(),
+            onValueChange = { onRoundsChange(it.roundToInt()) },
+            valueRange = AppPreferences.MIN_LOCAL_TOOL_ROUNDS.toFloat()..AppPreferences.MAX_LOCAL_TOOL_ROUNDS.toFloat(),
+            steps = AppPreferences.MAX_LOCAL_TOOL_ROUNDS - AppPreferences.MIN_LOCAL_TOOL_ROUNDS - 1
+        )
     }
 }
 

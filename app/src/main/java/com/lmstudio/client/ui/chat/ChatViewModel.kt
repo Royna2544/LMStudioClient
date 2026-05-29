@@ -134,6 +134,7 @@ data class ChatUiState(
     val baseUrl: String = AppPreferences.DEFAULT_BASE_URL,
     val bearerToken: String = "",
     val enabledLocalTools: Set<String> = LOCAL_TOOL_INFOS.map { it.name }.toSet(),
+    val localToolRounds: Int = AppPreferences.DEFAULT_LOCAL_TOOL_ROUNDS,
     val chatSettings: ChatSettings = ChatSettings(),
     val error: String? = null,
     val isLoadingModels: Boolean = false,
@@ -205,6 +206,11 @@ class ChatViewModel(
             preferences.disabledLocalToolNames.collect { disabledTools ->
                 val enabledTools = LOCAL_TOOL_INFOS.map { it.name }.toSet() - disabledTools
                 _uiState.update { it.copy(enabledLocalTools = enabledTools) }
+            }
+        }
+        viewModelScope.launch {
+            preferences.localToolRounds.collect { rounds ->
+                _uiState.update { it.copy(localToolRounds = rounds) }
             }
         }
     }
@@ -340,7 +346,7 @@ class ChatViewModel(
             history = history,
             useRemoteContinuation = requestSettings.saveRemoteHistory,
             enabledLocalTools = state.enabledLocalTools,
-            remainingLocalToolRounds = MAX_LOCAL_TOOL_ROUNDS,
+            remainingLocalToolRounds = state.localToolRounds,
             allowLocalTools = true
         )
     }
@@ -393,7 +399,7 @@ class ChatViewModel(
             history = history,
             useRemoteContinuation = false,
             enabledLocalTools = state.enabledLocalTools,
-            remainingLocalToolRounds = MAX_LOCAL_TOOL_ROUNDS,
+            remainingLocalToolRounds = state.localToolRounds,
             allowLocalTools = true
         )
     }
@@ -835,7 +841,6 @@ class ChatViewModel(
 
 private const val DEFAULT_CHAT_TITLE = "New chat"
 private const val TEMPORARY_CHAT_TITLE = "Temporary chat"
-private const val MAX_LOCAL_TOOL_ROUNDS = 4
 private val CHAT_SESSION_LIST_TYPE = object : TypeToken<List<ChatSession>>() {}.type
 
 private fun Float.toApiDecimal(scale: Int): Double =

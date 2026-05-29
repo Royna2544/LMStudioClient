@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
 data class SettingsUiState(
     val baseUrl: String = AppPreferences.DEFAULT_BASE_URL,
     val bearerToken: String = "",
+    val localToolRounds: Int = AppPreferences.DEFAULT_LOCAL_TOOL_ROUNDS,
     val enabledLocalTools: Set<String> = LOCAL_TOOL_INFOS.map { it.name }.toSet()
 )
 
@@ -40,6 +41,10 @@ class SettingsViewModel(
                 it.copy(enabledLocalTools = LOCAL_TOOL_INFOS.map { tool -> tool.name }.toSet() - disabledTools)
             }
         }
+        viewModelScope.launch {
+            val rounds = preferences.localToolRounds.first()
+            _uiState.update { it.copy(localToolRounds = rounds) }
+        }
     }
 
     fun updateBaseUrl(url: String) {
@@ -61,10 +66,22 @@ class SettingsViewModel(
         }
     }
 
+    fun updateLocalToolRounds(rounds: Int) {
+        _uiState.update {
+            it.copy(
+                localToolRounds = rounds.coerceIn(
+                    AppPreferences.MIN_LOCAL_TOOL_ROUNDS,
+                    AppPreferences.MAX_LOCAL_TOOL_ROUNDS
+                )
+            )
+        }
+    }
+
     fun saveAndClose(onDone: () -> Unit) {
         viewModelScope.launch {
             preferences.saveBaseUrl(_uiState.value.baseUrl.trim())
             preferences.saveBearerToken(_uiState.value.bearerToken.trim())
+            preferences.saveLocalToolRounds(_uiState.value.localToolRounds)
             preferences.saveDisabledLocalToolNames(
                 LOCAL_TOOL_INFOS.map { it.name }.toSet() - _uiState.value.enabledLocalTools
             )
