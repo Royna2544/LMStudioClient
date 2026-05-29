@@ -1146,12 +1146,13 @@ private fun buildSystemPrompt(userPrompt: String, tools: List<ToolDefinition>): 
     return parts.joinToString("\n\n").takeIf { it.isNotBlank() }
 }
 
-private fun UiMessage.toTranscriptMessageOrNull(): ChatMessage? =
-    when (role) {
-        "assistant" if isCanceled && content.isBlank() -> null
+private fun UiMessage.toTranscriptMessageOrNull(): ChatMessage? {
+    if (role == "assistant" && isCanceled && content.isBlank()) return null
+    return when (role) {
         "user", "assistant" -> ChatMessage(role = role, content = content)
         else -> null
     }
+}
 
 private fun List<ChatMessage>.toTranscript(): String =
     joinToString("\n\n") { message ->
