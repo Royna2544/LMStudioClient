@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -20,6 +21,7 @@ class AppPreferences(context: Context) {
         private val SELECTED_MODEL_KEY = stringPreferencesKey("selected_model")
         private val BEARER_TOKEN_KEY = stringPreferencesKey("bearer_token")
         private val CHAT_HISTORY_KEY = stringPreferencesKey("chat_history")
+        private val DISABLED_LOCAL_TOOLS_KEY = stringSetPreferencesKey("disabled_local_tools")
         const val DEFAULT_BASE_URL = "http://10.0.2.2:1234"
     }
 
@@ -39,6 +41,10 @@ class AppPreferences(context: Context) {
         prefs[CHAT_HISTORY_KEY] ?: ""
     }
 
+    val disabledLocalToolNames: Flow<Set<String>> = dataStore.data.map { prefs ->
+        prefs[DISABLED_LOCAL_TOOLS_KEY] ?: emptySet()
+    }
+
     suspend fun saveBaseUrl(url: String) {
         dataStore.edit { prefs -> prefs[BASE_URL_KEY] = url }
     }
@@ -53,5 +59,9 @@ class AppPreferences(context: Context) {
 
     suspend fun saveChatHistoryJson(json: String) {
         dataStore.edit { prefs -> prefs[CHAT_HISTORY_KEY] = json }
+    }
+
+    suspend fun saveDisabledLocalToolNames(names: Set<String>) {
+        dataStore.edit { prefs -> prefs[DISABLED_LOCAL_TOOLS_KEY] = names }
     }
 }

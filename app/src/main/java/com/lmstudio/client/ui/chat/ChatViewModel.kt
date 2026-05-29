@@ -1,5 +1,15 @@
 package com.lmstudio.client.ui.chat
 
+import android.app.ActivityManager
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.os.BatteryManager
+import android.os.Build
+import android.os.PowerManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -22,8 +32,10 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.io.File
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 import java.util.UUID
 
 enum class ReasoningMode(val label: String, val apiValue: String?) {
@@ -43,6 +55,24 @@ data class ChatSettings(
     val repeatPenalty: Float = 1.1f,
     val reasoningMode: ReasoningMode = ReasoningMode.AUTO,
     val saveRemoteHistory: Boolean = false
+)
+
+data class LocalToolInfo(
+    val name: String,
+    val description: String
+)
+
+val LOCAL_TOOL_INFOS = listOf(
+    LocalToolInfo("current_time.time", "Return the current local date, time, UTC offset, and timezone."),
+    LocalToolInfo("system.device", "Return basic Android device manufacturer, brand, model, and hardware identifiers."),
+    LocalToolInfo("system.os", "Return Android version, SDK level, build ID, security patch, timezone, and locale."),
+    LocalToolInfo("system.battery", "Return battery level, charging state, health, temperature, voltage, and saver mode."),
+    LocalToolInfo("system.cpu", "Return CPU core count, supported ABIs, architecture, and best-effort CPU model."),
+    LocalToolInfo("system.memory", "Return system memory and app heap usage."),
+    LocalToolInfo("system.display", "Return display resolution, density, orientation, and font scale."),
+    LocalToolInfo("system.network", "Return current network connectivity, transport type, and metered status."),
+    LocalToolInfo("system.thermal", "Return Android thermal status when supported."),
+    LocalToolInfo("system.app", "Return this app's package name, version, and build code.")
 )
 
 data class UiMessage(
@@ -104,6 +134,7 @@ data class ChatUiState(
     val selectedModel: String = "",
     val baseUrl: String = AppPreferences.DEFAULT_BASE_URL,
     val bearerToken: String = "",
+    val enabledLocalTools: Set<String> = LOCAL_TOOL_INFOS.map { it.name }.toSet(),
     val chatSettings: ChatSettings = ChatSettings(),
     val error: String? = null,
     val isLoadingModels: Boolean = false,
@@ -113,6 +144,7 @@ data class ChatUiState(
 )
 
 class ChatViewModel(
+    private val applicationContext: Context,
     private val repository: ChatRepository,
     private val preferences: AppPreferences
 ) : ViewModel() {
@@ -168,6 +200,12 @@ class ChatViewModel(
         viewModelScope.launch {
             preferences.bearerToken.collect { token ->
                 _uiState.update { it.copy(bearerToken = token) }
+            }
+        }
+        viewModelScope.launch {
+            preferences.disabledLocalToolNames.collect { disabledTools ->
+                val enabledTools = LOCAL_TOOL_INFOS.map { it.name }.toSet() - disabledTools
+                _uiState.update { it.copy(enabledLocalTools = enabledTools) }
             }
         }
     }
@@ -302,6 +340,7 @@ class ChatViewModel(
             attachments = attachments,
             history = history,
             useRemoteContinuation = requestSettings.saveRemoteHistory,
+            enabledLocalTools = state.enabledLocalTools,
             allowLocalTools = true
         )
     }
@@ -353,6 +392,7 @@ class ChatViewModel(
             attachments = retryAttachments,
             history = history,
             useRemoteContinuation = false,
+            enabledLocalTools = state.enabledLocalTools,
             allowLocalTools = true
         )
     }
@@ -403,9 +443,15 @@ class ChatViewModel(
         attachments: List<PendingAttachment>,
         history: List<UiMessage>,
         useRemoteContinuation: Boolean,
+        enabledLocalTools: Set<String>,
         allowLocalTools: Boolean
     ) {
         val previousResponseId = if (useRemoteContinuation) remoteResponseId else null
+        val activeLocalTools = if (allowLocalTools) {
+            buildLocalTools(applicationContext).filter { it.info.name in enabledLocalTools }
+        } else {
+            emptyList()
+        }
         val input = buildNativeInput(
             text = text,
             attachments = attachments,
@@ -419,7 +465,7 @@ class ChatViewModel(
             stream = settings.stream,
             systemPrompt = buildSystemPrompt(
                 userPrompt = settings.systemPrompt,
-                includeLocalTools = allowLocalTools
+                localTools = activeLocalTools
             ),
             temperature = settings.temperature.toApiDecimal(scale = 2),
             topP = settings.topP.toApiDecimal(scale = 2),
@@ -493,7 +539,7 @@ class ChatViewModel(
                 persistChatHistory()
             } finally {
                 val flushed = thinkTagState.flush()
-                val pendingToolCall = if (!streamFailed) {
+                val pendingToolCall = if (!streamFailed && activeLocalTools.isNotEmpty()) {
                     val lastMessage = _uiState.value.messages.lastOrNull()
                     lastMessage
                         ?.takeIf { it.role == "assistant" && it.isStreaming }
@@ -526,7 +572,7 @@ class ChatViewModel(
                         current.withCurrentSession(messages = msgs + assistantPlaceholder)
                             .copy(isStreaming = true)
                     }
-                    val toolResult = executeLocalTool(toolIndex, pendingToolCall)
+                    val toolResult = executeLocalTool(toolIndex, pendingToolCall, activeLocalTools)
                     val uiToolCall = toolResult.toUiToolCall()
                     val toolPrompt = buildLocalToolResultPrompt(toolResult)
                     _uiState.update { current ->
@@ -549,6 +595,7 @@ class ChatViewModel(
                         attachments = emptyList(),
                         history = _uiState.value.messages,
                         useRemoteContinuation = false,
+                        enabledLocalTools = _uiState.value.enabledLocalTools,
                         allowLocalTools = false
                     )
                     return@launch
@@ -764,12 +811,13 @@ class ChatViewModel(
     }
 
     class Factory(
+        private val applicationContext: Context,
         private val repository: ChatRepository,
         private val preferences: AppPreferences
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            ChatViewModel(repository, preferences) as T
+            ChatViewModel(applicationContext, repository, preferences) as T
     }
 }
 
@@ -986,10 +1034,10 @@ private fun buildRequestMessageText(text: String, attachments: List<PendingAttac
     if (isEmpty()) append("Please review the attached file.")
 }
 
-private fun buildSystemPrompt(userPrompt: String, includeLocalTools: Boolean): String? {
+private fun buildSystemPrompt(userPrompt: String, localTools: List<LocalToolDefinition>): String? {
     val parts = buildList {
         userPrompt.trim().takeIf { it.isNotBlank() }?.let { add(it) }
-        if (includeLocalTools && LOCAL_TOOLS.isNotEmpty()) add(buildLocalToolPrompt())
+        if (localTools.isNotEmpty()) add(buildLocalToolPrompt(localTools))
     }
     return parts.joinToString("\n\n").takeIf { it.isNotBlank() }
 }
@@ -1006,8 +1054,7 @@ private fun List<ChatMessage>.toTranscript(): String =
     }
 
 private data class LocalToolDefinition(
-    val name: String,
-    val description: String,
+    val info: LocalToolInfo,
     val parameters: String = "{}",
     val execute: (Map<String, String>) -> String
 )
@@ -1025,26 +1072,198 @@ private data class LocalToolResult(
     val durationMillis: Long
 )
 
-private val LOCAL_TOOLS = listOf(
-    LocalToolDefinition(
-        name = "current_time.time",
-        description = "Return the current local date, time, UTC offset, and timezone.",
-        parameters = "{}",
-        execute = {
-            val now = ZonedDateTime.now()
-            "Current local time: ${DateTimeFormatter.RFC_1123_DATE_TIME.format(now)}; timezone: ${now.zone.id}"
+private fun buildLocalTools(context: Context): List<LocalToolDefinition> {
+    val appContext = context.applicationContext
+    return listOf(
+        LocalToolDefinition(toolInfo("current_time.time")) {
+            currentTimeInfo()
+        },
+        LocalToolDefinition(toolInfo("system.device")) {
+            deviceInfo()
+        },
+        LocalToolDefinition(toolInfo("system.os")) {
+            osInfo()
+        },
+        LocalToolDefinition(toolInfo("system.battery")) {
+            batteryInfo(appContext)
+        },
+        LocalToolDefinition(toolInfo("system.cpu")) {
+            cpuInfo()
+        },
+        LocalToolDefinition(toolInfo("system.memory")) {
+            memoryInfo(appContext)
+        },
+        LocalToolDefinition(toolInfo("system.display")) {
+            displayInfo(appContext)
+        },
+        LocalToolDefinition(toolInfo("system.network")) {
+            networkInfo(appContext)
+        },
+        LocalToolDefinition(toolInfo("system.thermal")) {
+            thermalInfo(appContext)
+        },
+        LocalToolDefinition(toolInfo("system.app")) {
+            appInfo(appContext)
         }
     )
-)
+}
 
-private fun buildLocalToolPrompt(): String = buildString {
+private fun toolInfo(name: String): LocalToolInfo =
+    LOCAL_TOOL_INFOS.first { it.name == name }
+
+private fun buildLocalToolPrompt(localTools: List<LocalToolDefinition>): String = buildString {
     appendLine("Local tools are available. To call one, respond only with:")
     appendLine("<tool_call>{\"name\":\"tool.name\",\"arguments\":{}}</tool_call>")
     appendLine("Do not add prose around a tool call. After a tool result is provided, answer normally.")
     appendLine("Available local tools:")
-    LOCAL_TOOLS.forEach { tool ->
-        appendLine("- ${tool.name}: ${tool.description} Parameters JSON schema: ${tool.parameters}")
+    localTools.forEach { tool ->
+        appendLine("- ${tool.info.name}: ${tool.info.description} Parameters JSON schema: ${tool.parameters}")
     }
+}
+
+private fun currentTimeInfo(): String {
+    val now = ZonedDateTime.now()
+    return "Current local time: ${DateTimeFormatter.RFC_1123_DATE_TIME.format(now)}; timezone: ${now.zone.id}"
+}
+
+private fun deviceInfo(): String = buildLines(
+    "manufacturer" to Build.MANUFACTURER,
+    "brand" to Build.BRAND,
+    "model" to Build.MODEL,
+    "device" to Build.DEVICE,
+    "product" to Build.PRODUCT,
+    "board" to Build.BOARD,
+    "hardware" to Build.HARDWARE,
+    "supported_abis" to Build.SUPPORTED_ABIS.joinToString(", ")
+)
+
+private fun osInfo(): String = buildLines(
+    "android_release" to Build.VERSION.RELEASE,
+    "sdk_level" to Build.VERSION.SDK_INT.toString(),
+    "build_id" to Build.ID,
+    "security_patch" to Build.VERSION.SECURITY_PATCH,
+    "timezone" to ZonedDateTime.now().zone.id,
+    "locale" to Locale.getDefault().toLanguageTag()
+)
+
+private fun batteryInfo(context: Context): String {
+    val batteryStatus = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        ?: return "Battery information is unavailable."
+    val level = batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+    val scale = batteryStatus.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+    val percent = if (level >= 0 && scale > 0) "${(level * 100) / scale}%" else "unknown"
+    val status = batteryStatus.getIntExtra(BatteryManager.EXTRA_STATUS, -1).batteryStatusLabel()
+    val plugged = batteryStatus.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0).pluggedLabel()
+    val health = batteryStatus.getIntExtra(BatteryManager.EXTRA_HEALTH, -1).batteryHealthLabel()
+    val tempTenths = batteryStatus.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)
+    val temp = if (tempTenths != Int.MIN_VALUE) "%.1f C".format(tempTenths / 10.0) else "unknown"
+    val voltage = batteryStatus.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1)
+        .takeIf { it >= 0 }
+        ?.let { "${it}mV" }
+        ?: "unknown"
+    val powerManager = context.getSystemService(PowerManager::class.java)
+    return buildLines(
+        "level" to percent,
+        "status" to status,
+        "plugged" to plugged,
+        "health" to health,
+        "temperature" to temp,
+        "voltage" to voltage,
+        "battery_saver" to (powerManager?.isPowerSaveMode?.toString() ?: "unknown")
+    )
+}
+
+private fun cpuInfo(): String {
+    val cpuModel = runCatching {
+        File("/proc/cpuinfo").readLines()
+            .firstNotNullOfOrNull { line ->
+                val key = line.substringBefore(':').trim().lowercase()
+                val value = line.substringAfter(':', "").trim()
+                if (key in setOf("hardware", "model name", "processor") && value.isNotBlank()) value else null
+            }
+    }.getOrNull() ?: "unknown"
+    return buildLines(
+        "cores" to Runtime.getRuntime().availableProcessors().toString(),
+        "architecture" to System.getProperty("os.arch").orEmpty().ifBlank { "unknown" },
+        "supported_abis" to Build.SUPPORTED_ABIS.joinToString(", "),
+        "cpu_model" to cpuModel
+    )
+}
+
+private fun memoryInfo(context: Context): String {
+    val activityManager = context.getSystemService(ActivityManager::class.java)
+    val memoryInfo = ActivityManager.MemoryInfo()
+    activityManager?.getMemoryInfo(memoryInfo)
+    val runtime = Runtime.getRuntime()
+    return buildLines(
+        "system_total" to memoryInfo.totalMem.formatBytes(),
+        "system_available" to memoryInfo.availMem.formatBytes(),
+        "system_low_memory" to memoryInfo.lowMemory.toString(),
+        "app_heap_max" to runtime.maxMemory().formatBytes(),
+        "app_heap_total" to runtime.totalMemory().formatBytes(),
+        "app_heap_free" to runtime.freeMemory().formatBytes()
+    )
+}
+
+private fun displayInfo(context: Context): String {
+    val metrics = context.resources.displayMetrics
+    val config = context.resources.configuration
+    val orientation = when (config.orientation) {
+        android.content.res.Configuration.ORIENTATION_LANDSCAPE -> "landscape"
+        android.content.res.Configuration.ORIENTATION_PORTRAIT -> "portrait"
+        else -> "unknown"
+    }
+    return buildLines(
+        "resolution_px" to "${metrics.widthPixels}x${metrics.heightPixels}",
+        "density" to "%.2f".format(metrics.density),
+        "density_dpi" to metrics.densityDpi.toString(),
+        "scaled_density" to "%.2f".format(metrics.scaledDensity),
+        "font_scale" to "%.2f".format(config.fontScale),
+        "orientation" to orientation
+    )
+}
+
+private fun networkInfo(context: Context): String {
+    val connectivityManager = context.getSystemService(ConnectivityManager::class.java)
+        ?: return "Network information is unavailable."
+    val network = connectivityManager.activeNetwork
+    val capabilities = network?.let { connectivityManager.getNetworkCapabilities(it) }
+    val transports = capabilities?.transportLabels().orEmpty()
+    return buildLines(
+        "connected" to (capabilities != null).toString(),
+        "transports" to transports.ifBlank { "none" },
+        "metered" to connectivityManager.isActiveNetworkMetered.toString()
+    )
+}
+
+private fun thermalInfo(context: Context): String {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+        return "Thermal status is unavailable before Android 10."
+    }
+    val powerManager = context.getSystemService(PowerManager::class.java)
+    return buildLines(
+        "thermal_status" to (powerManager?.currentThermalStatus?.thermalStatusLabel() ?: "unknown")
+    )
+}
+
+@Suppress("DEPRECATION")
+private fun appInfo(context: Context): String {
+    val packageManager = context.packageManager
+    val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        packageManager.getPackageInfo(context.packageName, PackageManager.PackageInfoFlags.of(0))
+    } else {
+        packageManager.getPackageInfo(context.packageName, 0)
+    }
+    val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        packageInfo.longVersionCode
+    } else {
+        packageInfo.versionCode.toLong()
+    }
+    return buildLines(
+        "package_name" to context.packageName,
+        "version_name" to (packageInfo.versionName ?: "unknown"),
+        "version_code" to versionCode.toString()
+    )
 }
 
 private fun parseLocalToolCall(content: String): LocalToolCall? {
@@ -1087,13 +1306,17 @@ private fun String.substringBetweenToolCallTags(): String? {
     return substring(contentStart, closeStart).trim().takeIf { it.isNotBlank() }
 }
 
-private fun executeLocalTool(index: Int, call: LocalToolCall): LocalToolResult {
+private fun executeLocalTool(
+    index: Int,
+    call: LocalToolCall,
+    localTools: List<LocalToolDefinition>
+): LocalToolResult {
     val startedAtMillis = System.currentTimeMillis()
-    val tool = LOCAL_TOOLS.firstOrNull { it.name == call.name }
+    val tool = localTools.firstOrNull { it.info.name == call.name }
         ?: return LocalToolResult(
             index = index,
             call = call,
-            output = "Unknown local tool: ${call.name}",
+            output = "Local tool is not enabled or does not exist: ${call.name}",
             succeeded = false,
             durationMillis = System.currentTimeMillis() - startedAtMillis
         )
@@ -1231,6 +1454,84 @@ private fun String.tagPrefixSuffixLength(tag: String): Int {
     }
     return 0
 }
+
+private fun buildLines(vararg pairs: Pair<String, String>): String =
+    pairs.joinToString("\n") { (key, value) -> "$key: ${value.ifBlank { "unknown" }}" }
+
+private fun Long.formatBytes(): String {
+    if (this <= 0L) return "unknown"
+    val mib = this / (1024.0 * 1024.0)
+    return if (mib >= 1024.0) {
+        "%.2f GiB".format(mib / 1024.0)
+    } else {
+        "%.1f MiB".format(mib)
+    }
+}
+
+private fun Int.batteryStatusLabel(): String =
+    when (this) {
+        BatteryManager.BATTERY_STATUS_CHARGING -> "charging"
+        BatteryManager.BATTERY_STATUS_DISCHARGING -> "discharging"
+        BatteryManager.BATTERY_STATUS_FULL -> "full"
+        BatteryManager.BATTERY_STATUS_NOT_CHARGING -> "not_charging"
+        else -> "unknown"
+    }
+
+private fun Int.pluggedLabel(): String =
+    when (this) {
+        BatteryManager.BATTERY_PLUGGED_AC -> "ac"
+        BatteryManager.BATTERY_PLUGGED_USB -> "usb"
+        BatteryManager.BATTERY_PLUGGED_WIRELESS -> "wireless"
+        0 -> "none"
+        else -> "other"
+    }
+
+private fun Int.batteryHealthLabel(): String =
+    when (this) {
+        BatteryManager.BATTERY_HEALTH_COLD -> "cold"
+        BatteryManager.BATTERY_HEALTH_DEAD -> "dead"
+        BatteryManager.BATTERY_HEALTH_GOOD -> "good"
+        BatteryManager.BATTERY_HEALTH_OVERHEAT -> "overheat"
+        BatteryManager.BATTERY_HEALTH_OVER_VOLTAGE -> "over_voltage"
+        BatteryManager.BATTERY_HEALTH_UNSPECIFIED_FAILURE -> "unspecified_failure"
+        else -> "unknown"
+    }
+
+private fun NetworkCapabilities.transportLabels(): String =
+    buildList {
+        if (hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) add("wifi")
+        if (hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) add("cellular")
+        if (hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) add("ethernet")
+        if (hasTransport(NetworkCapabilities.TRANSPORT_BLUETOOTH)) add("bluetooth")
+        if (hasTransport(NetworkCapabilities.TRANSPORT_VPN)) add("vpn")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            hasTransport(NetworkCapabilities.TRANSPORT_WIFI_AWARE)
+        ) {
+            add("wifi_aware")
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1 &&
+            hasTransport(NetworkCapabilities.TRANSPORT_LOWPAN)
+        ) {
+            add("lowpan")
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            hasTransport(NetworkCapabilities.TRANSPORT_USB)
+        ) {
+            add("usb")
+        }
+    }.joinToString(", ")
+
+private fun Int.thermalStatusLabel(): String =
+    when (this) {
+        PowerManager.THERMAL_STATUS_NONE -> "none"
+        PowerManager.THERMAL_STATUS_LIGHT -> "light"
+        PowerManager.THERMAL_STATUS_MODERATE -> "moderate"
+        PowerManager.THERMAL_STATUS_SEVERE -> "severe"
+        PowerManager.THERMAL_STATUS_CRITICAL -> "critical"
+        PowerManager.THERMAL_STATUS_EMERGENCY -> "emergency"
+        PowerManager.THERMAL_STATUS_SHUTDOWN -> "shutdown"
+        else -> "unknown"
+    }
 
 private const val THINK_OPEN_TAG = "<think>"
 private const val THINK_CLOSE_TAG = "</think>"

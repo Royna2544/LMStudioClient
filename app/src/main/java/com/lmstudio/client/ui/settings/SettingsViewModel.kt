@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lmstudio.client.data.preferences.AppPreferences
+import com.lmstudio.client.ui.chat.LOCAL_TOOL_INFOS
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -13,7 +14,8 @@ import kotlinx.coroutines.launch
 
 data class SettingsUiState(
     val baseUrl: String = AppPreferences.DEFAULT_BASE_URL,
-    val bearerToken: String = ""
+    val bearerToken: String = "",
+    val enabledLocalTools: Set<String> = LOCAL_TOOL_INFOS.map { it.name }.toSet()
 )
 
 class SettingsViewModel(
@@ -32,6 +34,12 @@ class SettingsViewModel(
             val token = preferences.bearerToken.first()
             _uiState.update { it.copy(bearerToken = token) }
         }
+        viewModelScope.launch {
+            val disabledTools = preferences.disabledLocalToolNames.first()
+            _uiState.update {
+                it.copy(enabledLocalTools = LOCAL_TOOL_INFOS.map { tool -> tool.name }.toSet() - disabledTools)
+            }
+        }
     }
 
     fun updateBaseUrl(url: String) {
@@ -42,10 +50,24 @@ class SettingsViewModel(
         _uiState.update { it.copy(bearerToken = token) }
     }
 
+    fun updateLocalToolEnabled(name: String, enabled: Boolean) {
+        _uiState.update { current ->
+            val updated = if (enabled) {
+                current.enabledLocalTools + name
+            } else {
+                current.enabledLocalTools - name
+            }
+            current.copy(enabledLocalTools = updated)
+        }
+    }
+
     fun saveAndClose(onDone: () -> Unit) {
         viewModelScope.launch {
             preferences.saveBaseUrl(_uiState.value.baseUrl.trim())
             preferences.saveBearerToken(_uiState.value.bearerToken.trim())
+            preferences.saveDisabledLocalToolNames(
+                LOCAL_TOOL_INFOS.map { it.name }.toSet() - _uiState.value.enabledLocalTools
+            )
             onDone()
         }
     }

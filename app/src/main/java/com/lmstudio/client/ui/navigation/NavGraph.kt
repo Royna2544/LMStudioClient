@@ -1,6 +1,7 @@
 package com.lmstudio.client.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -22,9 +23,10 @@ fun NavGraph(
     preferences: AppPreferences,
     chatRepository: ChatRepository
 ) {
+    val appContext = LocalContext.current.applicationContext
     // Keep a single ChatViewModel instance so the conversation survives navigation
     val chatViewModel: ChatViewModel = viewModel(
-        factory = ChatViewModel.Factory(chatRepository, preferences)
+        factory = ChatViewModel.Factory(appContext, chatRepository, preferences)
     )
 
     NavHost(navController = navController, startDestination = ROUTE_CHAT) {
