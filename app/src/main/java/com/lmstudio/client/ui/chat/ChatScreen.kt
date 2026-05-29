@@ -369,7 +369,12 @@ fun ChatScreen(
                                 Icon(Icons.Default.Tune, contentDescription = "Chat settings")
                             }
                         }
-                        IconButton(onClick = onNavigateToSettings) {
+                        IconButton(
+                            onClick = {
+                                viewModel.discardTemporaryChat()
+                                onNavigateToSettings()
+                            }
+                        ) {
                             Icon(Icons.Default.Settings, contentDescription = "Settings")
                         }
                     }
@@ -683,8 +688,9 @@ private fun ChatHistoryDrawer(
     onPinChat: (String) -> Unit,
     onDeleteChat: (String) -> Unit
 ) {
-    val pinnedSessions = sessions.filter { it.isPinned }
-    val recentSessions = sessions.filterNot { it.isPinned }
+    val visibleSessions = sessions.filterNot { it.isTemporary }
+    val pinnedSessions = visibleSessions.filter { it.isPinned }
+    val recentSessions = visibleSessions.filterNot { it.isPinned }
 
     ModalDrawerSheet(modifier = Modifier.width(320.dp)) {
         Row(

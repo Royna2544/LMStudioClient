@@ -96,7 +96,8 @@ data class ChatUiState(
     val error: String? = null,
     val isLoadingModels: Boolean = false,
     val remoteResponseId: String? = null,
-    val isTemporaryChat: Boolean = false
+    val isTemporaryChat: Boolean = false,
+    val temporarySession: ChatSession? = null
 )
 
 class ChatViewModel(
@@ -536,7 +537,8 @@ class ChatViewModel(
                     pendingAttachments = emptyList(),
                     error = null,
                     remoteResponseId = null,
-                    isTemporaryChat = false
+                    isTemporaryChat = false,
+                    temporarySession = null
                 )
             } else {
                 val session = ChatSession()
@@ -548,7 +550,8 @@ class ChatViewModel(
                     pendingAttachments = emptyList(),
                     error = null,
                     remoteResponseId = null,
-                    isTemporaryChat = false
+                    isTemporaryChat = false,
+                    temporarySession = null
                 )
             }
         }
@@ -564,6 +567,26 @@ class ChatViewModel(
                 isTemporary = true
             )
             current.copy(
+                currentChatId = session.id,
+                messages = emptyList(),
+                inputText = "",
+                pendingAttachments = emptyList(),
+                error = null,
+                remoteResponseId = null,
+                isTemporaryChat = true,
+                temporarySession = session
+            )
+        }
+    }
+
+    fun discardTemporaryChat() {
+        if (!_uiState.value.isTemporaryChat) return
+        streamingJob?.cancel()
+        _uiState.update { current ->
+            if (!current.isTemporaryChat) return@update current
+
+            val session = ChatSession()
+            current.copy(
                 chatSessions = listOf(session) + current.chatSessions,
                 currentChatId = session.id,
                 messages = emptyList(),
@@ -571,9 +594,12 @@ class ChatViewModel(
                 pendingAttachments = emptyList(),
                 error = null,
                 remoteResponseId = null,
-                isTemporaryChat = true
+                isTemporaryChat = false,
+                temporarySession = null,
+                isStreaming = false
             )
         }
+        persistChatHistory()
     }
 
     fun selectChat(chatId: String) {
@@ -589,7 +615,8 @@ class ChatViewModel(
                     pendingAttachments = emptyList(),
                     error = null,
                     remoteResponseId = session.remoteResponseId,
-                    isTemporaryChat = session.isTemporary
+                    isTemporaryChat = false,
+                    temporarySession = null
                 )
             }
         }
@@ -629,7 +656,8 @@ class ChatViewModel(
                     pendingAttachments = emptyList(),
                     error = null,
                     remoteResponseId = null,
-                    isTemporaryChat = false
+                    isTemporaryChat = false,
+                    temporarySession = null
                 )
             } else {
                 current.copy(chatSessions = remainingSessions)
@@ -696,11 +724,27 @@ private fun ChatUiState.withCurrentSession(
         }
     }.sortedByDescending { it.updatedAt }
 
+    if (isTemporaryChat) {
+        val updatedTemporarySession = temporarySession?.copy(
+            title = title ?: temporarySession.title,
+            messages = messages,
+            remoteResponseId = remoteResponseId,
+            updatedAt = System.currentTimeMillis()
+        )
+        return copy(
+            messages = messages,
+            remoteResponseId = remoteResponseId,
+            temporarySession = updatedTemporarySession,
+            isTemporaryChat = true
+        )
+    }
+
     return copy(
         chatSessions = updatedSessions,
         messages = messages,
         remoteResponseId = remoteResponseId,
-        isTemporaryChat = updatedSessions.firstOrNull { it.id == currentChatId }?.isTemporary ?: isTemporaryChat
+        isTemporaryChat = false,
+        temporarySession = null
     )
 }
 
