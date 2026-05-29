@@ -71,7 +71,11 @@ fun MessageBubble(
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
     ) {
         Column(
-            modifier = Modifier.widthIn(max = 300.dp),
+            modifier = if (!isUser && isStreaming) {
+                Modifier.widthIn(max = 300.dp).fillMaxWidth()
+            } else {
+                Modifier.widthIn(max = 300.dp)
+            },
             horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
         ) {
             if (!isUser && (thinkingContent.isNotEmpty() || isThinking)) {
@@ -87,6 +91,7 @@ fun MessageBubble(
             if (shouldShowContentBubble) {
                 val hasError = errorMessage != null
                 Surface(
+                    modifier = if (!isUser && isStreaming) Modifier.fillMaxWidth() else Modifier,
                     color = when {
                         isUser -> MaterialTheme.colorScheme.primary
                         hasError -> MaterialTheme.colorScheme.errorContainer
