@@ -12,6 +12,8 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -120,6 +122,7 @@ fun ChatScreen(
     var showChatSettings by remember { mutableStateOf(false) }
     var showAttachmentMenu by remember { mutableStateOf(false) }
     var followStreaming by remember { mutableStateOf(true) }
+    var userPausedStreamingFollow by remember { mutableStateOf(false) }
     var hadActiveGeneration by remember { mutableStateOf(false) }
     var lastAutoScrolledChatId by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -184,6 +187,7 @@ fun ChatScreen(
 
     LaunchedEffect(messageListSize, uiState.isStreaming) {
         if (uiState.isStreaming && uiState.messages.isNotEmpty()) {
+            userPausedStreamingFollow = false
             followStreaming = true
             listState.animateScrollToItem(bottomAnchorIndex)
         }
@@ -191,9 +195,13 @@ fun ChatScreen(
 
     LaunchedEffect(listState.isScrollInProgress, shouldFollowStreaming, uiState.isStreaming) {
         if (!uiState.isStreaming) {
+            userPausedStreamingFollow = false
             followStreaming = false
-        } else if (listState.isScrollInProgress) {
-            followStreaming = shouldFollowStreaming
+        } else if (userPausedStreamingFollow && shouldFollowStreaming && !listState.isScrollInProgress) {
+            userPausedStreamingFollow = false
+            followStreaming = true
+        } else if (userPausedStreamingFollow) {
+            followStreaming = false
         } else if (shouldFollowStreaming) {
             followStreaming = true
         }
@@ -203,6 +211,7 @@ fun ChatScreen(
         if (uiState.isStreaming &&
             uiState.messages.isNotEmpty() &&
             followStreaming &&
+            !userPausedStreamingFollow &&
             !listState.isScrollInProgress
         ) {
             listState.scrollToItem(bottomAnchorIndex)
@@ -440,7 +449,17 @@ fun ChatScreen(
                 // Messages
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .pointerInput(uiState.isStreaming) {
+                            awaitEachGesture {
+                                awaitFirstDown(requireUnconsumed = false)
+                                if (uiState.isStreaming) {
+                                    userPausedStreamingFollow = true
+                                    followStreaming = false
+                                }
+                            }
+                        },
                     contentPadding = PaddingValues(vertical = 8.dp)
                 ) {
                     if (uiState.messages.isEmpty()) {
