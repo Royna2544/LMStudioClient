@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.google.gson.Gson
+import com.google.gson.JsonParser
 import com.google.gson.reflect.TypeToken
 import com.lmstudio.client.data.api.dto.ChatInputItem
 import com.lmstudio.client.data.api.dto.ChatMessage
@@ -21,6 +22,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 
 enum class ReasoningMode(val label: String, val apiValue: String?) {
@@ -288,7 +291,8 @@ class ChatViewModel(
             text = text,
             attachments = attachments,
             history = history,
-            useRemoteContinuation = requestSettings.saveRemoteHistory
+            useRemoteContinuation = requestSettings.saveRemoteHistory,
+            allowLocalTools = true
         )
     }
 
@@ -338,7 +342,8 @@ class ChatViewModel(
             text = retryText,
             attachments = retryAttachments,
             history = history,
-            useRemoteContinuation = false
+            useRemoteContinuation = false,
+            allowLocalTools = true
         )
     }
 
@@ -387,7 +392,8 @@ class ChatViewModel(
         text: String,
         attachments: List<PendingAttachment>,
         history: List<UiMessage>,
-        useRemoteContinuation: Boolean
+        useRemoteContinuation: Boolean,
+        allowLocalTools: Boolean
     ) {
         val previousResponseId = if (useRemoteContinuation) remoteResponseId else null
         val input = buildNativeInput(
@@ -401,7 +407,10 @@ class ChatViewModel(
             model = selectedModel,
             input = input,
             stream = settings.stream,
-            systemPrompt = settings.systemPrompt.takeIf { it.isNotBlank() },
+            systemPrompt = buildSystemPrompt(
+                userPrompt = settings.systemPrompt,
+                includeLocalTools = allowLocalTools
+            ),
             temperature = settings.temperature.toApiDecimal(scale = 2),
             topP = settings.topP.toApiDecimal(scale = 2),
             topK = settings.topK,
@@ -415,6 +424,7 @@ class ChatViewModel(
         streamingJob = viewModelScope.launch {
             var thinkTagState = ThinkTagState()
             var receivedResponseContent = false
+            var streamFailed = false
             try {
                 repository.streamChat(baseUrl, request, bearerToken).collect { token ->
                     if (token.responseId != null) {
@@ -455,6 +465,7 @@ class ChatViewModel(
                 }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
+                streamFailed = true
                 val message = e.message ?: "LM Studio did not return a response."
                 _uiState.update { current ->
                     val msgs = current.messages.toMutableList()
@@ -472,6 +483,56 @@ class ChatViewModel(
                 persistChatHistory()
             } finally {
                 val flushed = thinkTagState.flush()
+                val pendingToolCall = if (!streamFailed) {
+                    val lastMessage = _uiState.value.messages.lastOrNull()
+                    lastMessage
+                        ?.takeIf { it.role == "assistant" && it.isStreaming }
+                        ?.let { parseLocalToolCall(it.content + flushed.content) }
+                } else {
+                    null
+                }
+
+                if (pendingToolCall != null) {
+                    val toolResult = executeLocalTool(pendingToolCall)
+                    val toolPrompt = buildLocalToolResultPrompt(toolResult)
+                    _uiState.update { current ->
+                        val msgs = current.messages.toMutableList()
+                        val last = msgs.lastIndex
+                        if (last >= 0 && msgs[last].isStreaming) {
+                            msgs[last] = UiMessage(
+                                id = msgs[last].id,
+                                role = "tool",
+                                content = TOOL_STATUS_MESSAGE.format(pendingToolCall.name),
+                                responseStartedAtMillis = msgs[last].responseStartedAtMillis,
+                                firstTokenAtMillis = msgs[last].firstTokenAtMillis,
+                                responseCompletedAtMillis = System.currentTimeMillis()
+                            )
+                        }
+                        val assistantPlaceholder = UiMessage(
+                            role = "assistant",
+                            responseStartedAtMillis = System.currentTimeMillis(),
+                            isThinking = true,
+                            isStreaming = true
+                        )
+                        current.withCurrentSession(messages = msgs + assistantPlaceholder)
+                            .copy(isStreaming = true)
+                    }
+                    persistChatHistory()
+                    startResponseStream(
+                        baseUrl = baseUrl,
+                        bearerToken = bearerToken,
+                        selectedModel = selectedModel,
+                        settings = settings.copy(saveRemoteHistory = false),
+                        remoteResponseId = null,
+                        text = toolPrompt,
+                        attachments = emptyList(),
+                        history = _uiState.value.messages,
+                        useRemoteContinuation = false,
+                        allowLocalTools = false
+                    )
+                    return@launch
+                }
+
                 _uiState.update { current ->
                     val msgs = current.messages.toMutableList()
                     val last = msgs.lastIndex
@@ -803,7 +864,7 @@ private fun buildNativeInput(
         attachments.isNotEmpty() -> messageText
         history.size == 1 -> messageText
         else -> history.dropLast(1)
-            .map { ChatMessage(role = it.role, content = it.content) }
+            .mapNotNull { it.toTranscriptMessageOrNull() }
             .toTranscript() + "\n\nUser:\n$messageText"
     }
 
@@ -838,10 +899,127 @@ private fun buildRequestMessageText(text: String, attachments: List<PendingAttac
     if (isEmpty()) append("Please review the attached file.")
 }
 
+private fun buildSystemPrompt(userPrompt: String, includeLocalTools: Boolean): String? {
+    val parts = buildList {
+        userPrompt.trim().takeIf { it.isNotBlank() }?.let { add(it) }
+        if (includeLocalTools && LOCAL_TOOLS.isNotEmpty()) add(buildLocalToolPrompt())
+    }
+    return parts.joinToString("\n\n").takeIf { it.isNotBlank() }
+}
+
+private fun UiMessage.toTranscriptMessageOrNull(): ChatMessage? =
+    when (role) {
+        "user", "assistant" -> ChatMessage(role = role, content = content)
+        else -> null
+    }
+
 private fun List<ChatMessage>.toTranscript(): String =
     joinToString("\n\n") { message ->
         "${message.role.replaceFirstChar { it.uppercase() }}:\n${message.content}"
     }
+
+private data class LocalToolDefinition(
+    val name: String,
+    val description: String,
+    val parameters: String = "{}",
+    val execute: (Map<String, String>) -> String
+)
+
+private data class LocalToolCall(
+    val name: String,
+    val arguments: Map<String, String>
+)
+
+private data class LocalToolResult(
+    val call: LocalToolCall,
+    val output: String,
+    val succeeded: Boolean
+)
+
+private val LOCAL_TOOLS = listOf(
+    LocalToolDefinition(
+        name = "current_time.time",
+        description = "Return the current local date, time, UTC offset, and timezone.",
+        parameters = "{}",
+        execute = {
+            val now = ZonedDateTime.now()
+            "Current local time: ${DateTimeFormatter.RFC_1123_DATE_TIME.format(now)}; timezone: ${now.zone.id}"
+        }
+    )
+)
+
+private fun buildLocalToolPrompt(): String = buildString {
+    appendLine("Local tools are available. To call one, respond only with:")
+    appendLine("<tool_call>{\"name\":\"tool.name\",\"arguments\":{}}</tool_call>")
+    appendLine("Do not add prose around a tool call. After a tool result is provided, answer normally.")
+    appendLine("Available local tools:")
+    LOCAL_TOOLS.forEach { tool ->
+        appendLine("- ${tool.name}: ${tool.description} Parameters JSON schema: ${tool.parameters}")
+    }
+}
+
+private fun parseLocalToolCall(content: String): LocalToolCall? {
+    val match = TOOL_CALL_REGEX.find(content) ?: return null
+    val rawJson = match.groupValues[1].trim()
+    return try {
+        val root = JsonParser.parseString(rawJson)
+        if (!root.isJsonObject) return null
+
+        val obj = root.asJsonObject
+        val name = listOf("name", "tool")
+            .firstNotNullOfOrNull { key ->
+                obj.get(key)?.takeIf { it.isJsonPrimitive }?.asString
+            }
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+        val args = obj.get("arguments")
+            ?.takeIf { it.isJsonObject }
+            ?.asJsonObject
+            ?.entrySet()
+            ?.associate { (key, value) ->
+                val argValue = if (value.isJsonPrimitive) value.asString else value.toString()
+                key to argValue
+            }
+            .orEmpty()
+
+        LocalToolCall(name = name, arguments = args)
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private fun executeLocalTool(call: LocalToolCall): LocalToolResult {
+    val tool = LOCAL_TOOLS.firstOrNull { it.name == call.name }
+        ?: return LocalToolResult(
+            call = call,
+            output = "Unknown local tool: ${call.name}",
+            succeeded = false
+        )
+
+    return try {
+        LocalToolResult(
+            call = call,
+            output = tool.execute(call.arguments),
+            succeeded = true
+        )
+    } catch (e: Exception) {
+        LocalToolResult(
+            call = call,
+            output = e.message ?: "Local tool failed.",
+            succeeded = false
+        )
+    }
+}
+
+private fun buildLocalToolResultPrompt(result: LocalToolResult): String = buildString {
+    appendLine("Local tool result")
+    appendLine("tool: ${result.call.name}")
+    appendLine("status: ${if (result.succeeded) "success" else "failure"}")
+    appendLine("output:")
+    appendLine(result.output)
+    appendLine()
+    append("Use this result to answer the user's previous request. Do not call another local tool unless a new tool result is needed.")
+}
 
 private data class ThinkTagState(
     val inThink: Boolean = false,
@@ -925,3 +1103,8 @@ private fun String.tagPrefixSuffixLength(tag: String): Int {
 
 private const val THINK_OPEN_TAG = "<think>"
 private const val THINK_CLOSE_TAG = "</think>"
+private const val TOOL_STATUS_MESSAGE = "model is calling a tool request... `%s`"
+private val TOOL_CALL_REGEX = Regex(
+    pattern = "<tool_call>\\s*(\\{.*?})\\s*</tool_call>",
+    options = setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+)

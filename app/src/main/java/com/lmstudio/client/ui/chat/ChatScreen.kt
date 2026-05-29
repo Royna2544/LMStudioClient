@@ -451,22 +451,26 @@ fun ChatScreen(
                         }
                     } else {
                         items(uiState.messages, key = { it.id }) { message ->
-                            MessageBubble(
-                                content = message.content,
-                                isUser = message.role == "user",
-                                attachments = message.requestAttachments,
-                                thinkingContent = message.thinkingContent,
-                                errorMessage = message.errorMessage,
-                                tttlSeconds = message.tttlSeconds(),
-                                generationSeconds = message.generationSeconds(),
-                                isThinking = message.isThinking,
-                                isStreaming = message.isStreaming,
-                                canEditUserMessage = message.id == editableUserMessageId,
-                                onCopy = { copyResponseText(context, message.content) },
-                                onShare = { shareResponseText(context, message.content) },
-                                onEdit = { viewModel.editUserMessage(message.id) },
-                                onRetry = { viewModel.retryResponse(message.id) }
-                            )
+                            if (message.role == "tool") {
+                                ToolStatusBubble(content = message.content)
+                            } else {
+                                MessageBubble(
+                                    content = message.content,
+                                    isUser = message.role == "user",
+                                    attachments = message.requestAttachments,
+                                    thinkingContent = message.thinkingContent,
+                                    errorMessage = message.errorMessage,
+                                    tttlSeconds = message.tttlSeconds(),
+                                    generationSeconds = message.generationSeconds(),
+                                    isThinking = message.isThinking,
+                                    isStreaming = message.isStreaming,
+                                    canEditUserMessage = message.id == editableUserMessageId,
+                                    onCopy = { copyResponseText(context, message.content) },
+                                    onShare = { shareResponseText(context, message.content) },
+                                    onEdit = { viewModel.editUserMessage(message.id) },
+                                    onRetry = { viewModel.retryResponse(message.id) }
+                                )
+                            }
                         }
                         item(key = CHAT_BOTTOM_ANCHOR_KEY) {
                             Spacer(Modifier.height(1.dp))
@@ -677,6 +681,29 @@ private fun android.content.ContentResolver.displayName(uri: Uri): String? {
 }
 
 private const val CHAT_BOTTOM_ANCHOR_KEY = "chat-bottom-anchor"
+
+@Composable
+private fun ToolStatusBubble(content: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.Start
+    ) {
+        Surface(
+            modifier = Modifier.widthIn(max = 300.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+            shape = RoundedCornerShape(10.dp)
+        ) {
+            Text(
+                text = content,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
 
 @Composable
 private fun ChatHistoryDrawer(
