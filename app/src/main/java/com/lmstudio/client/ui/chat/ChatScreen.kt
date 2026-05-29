@@ -80,6 +80,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -119,6 +120,7 @@ fun ChatScreen(
     var showAttachmentMenu by remember { mutableStateOf(false) }
     var followStreaming by remember { mutableStateOf(true) }
     var hadActiveGeneration by remember { mutableStateOf(false) }
+    var lastAutoScrolledChatId by rememberSaveable { mutableStateOf<String?>(null) }
 
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -171,9 +173,10 @@ fun ChatScreen(
         if (uiState.isStreaming) null else uiState.messages.lastOrNull { it.role == "user" }?.id
     }
 
-    LaunchedEffect(uiState.currentChatId) {
-        if (uiState.messages.isNotEmpty()) {
-            followStreaming = true
+    LaunchedEffect(uiState.currentChatId, messageListSize) {
+        if (uiState.currentChatId != lastAutoScrolledChatId && uiState.messages.isNotEmpty()) {
+            lastAutoScrolledChatId = uiState.currentChatId
+            followStreaming = false
             listState.scrollToItem(bottomAnchorIndex)
         }
     }
