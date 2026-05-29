@@ -79,6 +79,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -98,11 +100,13 @@ fun ChatScreen(
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val hapticFeedback = LocalHapticFeedback.current
     var showModelDropdown by remember { mutableStateOf(false) }
     var showModelInfo by remember { mutableStateOf(false) }
     var showChatSettings by remember { mutableStateOf(false) }
     var showAttachmentMenu by remember { mutableStateOf(false) }
     var followStreaming by remember { mutableStateOf(true) }
+    var hadActiveGeneration by remember { mutableStateOf(false) }
 
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -190,6 +194,13 @@ fun ChatScreen(
         ) {
             listState.scrollToItem(bottomAnchorIndex)
         }
+    }
+
+    LaunchedEffect(uiState.isStreaming) {
+        if (hadActiveGeneration && !uiState.isStreaming) {
+            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+        }
+        hadActiveGeneration = uiState.isStreaming
     }
 
     ModalNavigationDrawer(
