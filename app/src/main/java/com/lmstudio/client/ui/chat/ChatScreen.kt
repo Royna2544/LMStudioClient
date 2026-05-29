@@ -15,6 +15,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -222,35 +223,16 @@ fun ChatScreen(
         }
     }
 
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        drawerContent = {
-            ChatHistoryDrawer(
-                sessions = uiState.chatSessions,
-                currentChatId = uiState.currentChatId,
-                onNewChat = {
-                    viewModel.startNewChat()
-                    scope.launch { drawerState.close() }
-                },
-                onTemporaryChat = {
-                    viewModel.startTemporaryChat()
-                    scope.launch { drawerState.close() }
-                },
-                onSelectChat = { chatId ->
-                    viewModel.selectChat(chatId)
-                    scope.launch { drawerState.close() }
-                },
-                onPinChat = viewModel::pinChat,
-                onDeleteChat = viewModel::deleteChat
-            )
-        }
-    ) {
+    val mainContent: @Composable (Boolean, Modifier) -> Unit = { showHistoryButton, modifier ->
         Scaffold(
+            modifier = modifier,
             topBar = {
                 TopAppBar(
                     navigationIcon = {
-                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                            Icon(Icons.Default.Menu, contentDescription = "Chat history")
+                        if (showHistoryButton) {
+                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                Icon(Icons.Default.Menu, contentDescription = "Chat history")
+                            }
                         }
                     },
                     title = {
@@ -629,6 +611,66 @@ fun ChatScreen(
         }
     }
 
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val showPersistentHistory = maxWidth >= HISTORY_PANE_BREAKPOINT
+
+        LaunchedEffect(showPersistentHistory) {
+            if (showPersistentHistory && drawerState.isOpen) {
+                drawerState.close()
+            }
+        }
+
+        if (showPersistentHistory) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                ChatHistoryPane(
+                    sessions = uiState.chatSessions,
+                    currentChatId = uiState.currentChatId,
+                    onNewChat = viewModel::startNewChat,
+                    onTemporaryChat = viewModel::startTemporaryChat,
+                    onSelectChat = viewModel::selectChat,
+                    onPinChat = viewModel::pinChat,
+                    onDeleteChat = viewModel::deleteChat,
+                    modifier = Modifier
+                        .width(HISTORY_PANE_WIDTH)
+                        .fillMaxSize()
+                )
+                Box(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
+                )
+                mainContent(false, Modifier.weight(1f))
+            }
+        } else {
+            ModalNavigationDrawer(
+                drawerState = drawerState,
+                drawerContent = {
+                    ChatHistoryDrawer(
+                        sessions = uiState.chatSessions,
+                        currentChatId = uiState.currentChatId,
+                        onNewChat = {
+                            viewModel.startNewChat()
+                            scope.launch { drawerState.close() }
+                        },
+                        onTemporaryChat = {
+                            viewModel.startTemporaryChat()
+                            scope.launch { drawerState.close() }
+                        },
+                        onSelectChat = { chatId ->
+                            viewModel.selectChat(chatId)
+                            scope.launch { drawerState.close() }
+                        },
+                        onPinChat = viewModel::pinChat,
+                        onDeleteChat = viewModel::deleteChat
+                    )
+                }
+            ) {
+                mainContent(true, Modifier.fillMaxSize())
+            }
+        }
+    }
+
     // Bottom sheets
     if (showModelInfo && selectedModelData != null) {
         ModelInfoSheet(
@@ -720,9 +762,61 @@ private fun android.content.ContentResolver.displayName(uri: Uri): String? {
 }
 
 private const val CHAT_BOTTOM_ANCHOR_KEY = "chat-bottom-anchor"
+private val HISTORY_PANE_WIDTH = 320.dp
+private val HISTORY_PANE_BREAKPOINT = 840.dp
 
 @Composable
 private fun ChatHistoryDrawer(
+    sessions: List<ChatSession>,
+    currentChatId: String,
+    onNewChat: () -> Unit,
+    onTemporaryChat: () -> Unit,
+    onSelectChat: (String) -> Unit,
+    onPinChat: (String) -> Unit,
+    onDeleteChat: (String) -> Unit
+) {
+    ModalDrawerSheet(modifier = Modifier.width(HISTORY_PANE_WIDTH)) {
+        ChatHistoryContent(
+            sessions = sessions,
+            currentChatId = currentChatId,
+            onNewChat = onNewChat,
+            onTemporaryChat = onTemporaryChat,
+            onSelectChat = onSelectChat,
+            onPinChat = onPinChat,
+            onDeleteChat = onDeleteChat
+        )
+    }
+}
+
+@Composable
+private fun ChatHistoryPane(
+    sessions: List<ChatSession>,
+    currentChatId: String,
+    onNewChat: () -> Unit,
+    onTemporaryChat: () -> Unit,
+    onSelectChat: (String) -> Unit,
+    onPinChat: (String) -> Unit,
+    onDeleteChat: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surface
+    ) {
+        ChatHistoryContent(
+            sessions = sessions,
+            currentChatId = currentChatId,
+            onNewChat = onNewChat,
+            onTemporaryChat = onTemporaryChat,
+            onSelectChat = onSelectChat,
+            onPinChat = onPinChat,
+            onDeleteChat = onDeleteChat
+        )
+    }
+}
+
+@Composable
+private fun ChatHistoryContent(
     sessions: List<ChatSession>,
     currentChatId: String,
     onNewChat: () -> Unit,
@@ -735,7 +829,7 @@ private fun ChatHistoryDrawer(
     val pinnedSessions = visibleSessions.filter { it.isPinned }
     val recentSessions = visibleSessions.filterNot { it.isPinned }
 
-    ModalDrawerSheet(modifier = Modifier.width(320.dp)) {
+    Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
