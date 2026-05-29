@@ -42,8 +42,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lmstudio.client.R
 import com.lmstudio.client.ui.chat.PendingAttachment
 import com.lmstudio.client.ui.chat.PendingAttachmentType
 import com.lmstudio.client.ui.chat.UiToolCall
@@ -185,13 +187,13 @@ private fun UserActions(
         TextButton(enabled = canCopy, onClick = onCopy) {
             Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
             Spacer(Modifier.width(4.dp))
-            Text("Copy", style = MaterialTheme.typography.labelSmall)
+            Text(stringResource(R.string.copy), style = MaterialTheme.typography.labelSmall)
         }
         if (canEdit) {
             TextButton(onClick = onEdit) {
                 Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("Edit", style = MaterialTheme.typography.labelSmall)
+                Text(stringResource(R.string.edit), style = MaterialTheme.typography.labelSmall)
             }
         }
     }
@@ -215,7 +217,7 @@ private fun AttachmentBlock(attachments: List<PendingAttachment>) {
             ) {
                 Column(modifier = Modifier.padding(8.dp)) {
                     Text(
-                        text = "Attached",
+                        text = stringResource(R.string.attached),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.outline
                     )
@@ -229,7 +231,7 @@ private fun AttachmentBlock(attachments: List<PendingAttachment>) {
                         AttachmentImagePreview(dataUrl = attachment.dataUrl)
                     } else {
                         Text(
-                            text = "Text document",
+                            text = stringResource(R.string.text_document),
                             modifier = Modifier.padding(top = 4.dp),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.outline
@@ -247,7 +249,7 @@ private fun AttachmentImagePreview(dataUrl: String?) {
     imageBitmap?.let {
         Image(
             bitmap = it,
-            contentDescription = "Attached image preview",
+            contentDescription = stringResource(R.string.attached_image_preview_cd),
             modifier = Modifier
                 .padding(top = 8.dp)
                 .fillMaxWidth()
@@ -271,10 +273,10 @@ private fun ResponseStats(
     tttlSeconds: Double?,
     generationSeconds: Double?
 ) {
-    val stats = buildList {
-        tttlSeconds?.let { add("First Tok %.1fs".format(it)) }
-        generationSeconds?.let { add("Generated %.1fs".format(it)) }
-    }
+    val stats = listOfNotNull(
+        tttlSeconds?.let { stringResource(R.string.first_tok_stat, it) },
+        generationSeconds?.let { stringResource(R.string.generated_stat, it) }
+    )
     if (stats.isEmpty()) return
 
     Text(
@@ -298,13 +300,21 @@ private fun ToolCallDetails(toolCalls: List<UiToolCall>) {
         ) {
             Icon(
                 imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                contentDescription = if (expanded) "Collapse tool details" else "Expand tool details",
+                contentDescription = if (expanded) {
+                    stringResource(R.string.collapse_tool_details_cd)
+                } else {
+                    stringResource(R.string.expand_tool_details_cd)
+                },
                 modifier = Modifier.size(14.dp),
                 tint = MaterialTheme.colorScheme.outline
             )
             Spacer(Modifier.width(4.dp))
             Text(
-                text = if (toolCalls.size == 1) "Tool call" else "Tool calls (${toolCalls.size})",
+                text = if (toolCalls.size == 1) {
+                    stringResource(R.string.tool_call)
+                } else {
+                    stringResource(R.string.tool_calls_count, toolCalls.size)
+                },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.outline
             )
@@ -321,12 +331,20 @@ private fun ToolCallDetails(toolCalls: List<UiToolCall>) {
                     ) {
                         Column(modifier = Modifier.padding(8.dp)) {
                             Text(
-                                text = "Tool #${toolCall.index}: ${toolCall.name}",
+                                text = stringResource(R.string.tool_title, toolCall.index, toolCall.name),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
-                                text = "${if (toolCall.succeeded) "Success" else "Failed"} · ${toolCall.durationLabel()}",
+                                text = stringResource(
+                                    R.string.tool_status,
+                                    if (toolCall.succeeded) {
+                                        stringResource(R.string.tool_success)
+                                    } else {
+                                        stringResource(R.string.tool_failed)
+                                    },
+                                    toolCall.durationLabel()
+                                ),
                                 modifier = Modifier.padding(top = 2.dp),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.outline
@@ -368,17 +386,17 @@ private fun ResponseActions(
         TextButton(enabled = canCopyOrShare, onClick = onCopy) {
             Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
             Spacer(Modifier.width(4.dp))
-            Text("Copy", style = MaterialTheme.typography.labelSmall)
+            Text(stringResource(R.string.copy), style = MaterialTheme.typography.labelSmall)
         }
         TextButton(enabled = canCopyOrShare, onClick = onShare) {
             Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(14.dp))
             Spacer(Modifier.width(4.dp))
-            Text("Share", style = MaterialTheme.typography.labelSmall)
+            Text(stringResource(R.string.share), style = MaterialTheme.typography.labelSmall)
         }
         TextButton(onClick = onRetry) {
             Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
             Spacer(Modifier.width(4.dp))
-            Text("Retry", style = MaterialTheme.typography.labelSmall)
+            Text(stringResource(R.string.retry), style = MaterialTheme.typography.labelSmall)
         }
     }
 }
@@ -411,20 +429,24 @@ private fun ThinkingBlock(
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    if (isModelLoading) "(Re)Loading model..." else "Thinking…",
+                    if (isModelLoading) stringResource(R.string.model_reloading) else stringResource(R.string.thinking),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.outline
                 )
             } else {
                 Icon(
                     imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = if (expanded) "Collapse" else "Expand reasoning",
+                    contentDescription = if (expanded) {
+                        stringResource(R.string.collapse_cd)
+                    } else {
+                        stringResource(R.string.expand_reasoning_cd)
+                    },
                     modifier = Modifier.size(14.dp),
                     tint = MaterialTheme.colorScheme.outline
                 )
                 Spacer(Modifier.width(4.dp))
                 Text(
-                    "Reasoning",
+                    stringResource(R.string.reasoning),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.outline
                 )

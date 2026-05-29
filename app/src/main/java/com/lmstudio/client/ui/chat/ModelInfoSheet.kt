@@ -18,7 +18,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.lmstudio.client.R
 import com.lmstudio.client.data.api.dto.ModelData
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -35,23 +37,24 @@ fun ModelInfoSheet(model: ModelData, onDismiss: () -> Unit) {
                 .padding(horizontal = 20.dp)
                 .navigationBarsPadding()
         ) {
-            Text("Model Info", style = MaterialTheme.typography.headlineSmall)
+            Text(stringResource(R.string.model_info), style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(16.dp))
             HorizontalDivider()
             Spacer(Modifier.height(8.dp))
 
-            InfoRow("Publisher", model.publisher?.ifBlank { "—" } ?: "—")
-            InfoRow("Name", model.id.substringAfterLast('/').ifBlank { model.id })
-            InfoRow("Architecture", model.arch?.ifBlank { "—" } ?: "—")
-            InfoRow("Quantization", model.quantization?.ifBlank { "—" } ?: "—")
-            InfoRow("Context Length", if (model.maxContextLength > 0) "${model.maxContextLength}" else "—")
-            InfoRow("Vision", if (model.capabilities?.vision == true) "Yes" else "No")
-            InfoRow("Tool Use", if (model.capabilities?.toolUse == true) "Yes" else "No")
+            val unavailable = stringResource(R.string.not_available)
+            InfoRow(stringResource(R.string.publisher), model.publisher?.ifBlank { unavailable } ?: unavailable)
+            InfoRow(stringResource(R.string.name), model.id.substringAfterLast('/').ifBlank { model.id })
+            InfoRow(stringResource(R.string.architecture), model.arch?.ifBlank { unavailable } ?: unavailable)
+            InfoRow(stringResource(R.string.quantization), model.quantization?.ifBlank { unavailable } ?: unavailable)
+            InfoRow(stringResource(R.string.context_length), if (model.maxContextLength > 0) "${model.maxContextLength}" else unavailable)
+            InfoRow(stringResource(R.string.vision), if (model.capabilities?.vision == true) stringResource(R.string.yes) else stringResource(R.string.no))
+            InfoRow(stringResource(R.string.tool_use), if (model.capabilities?.toolUse == true) stringResource(R.string.yes) else stringResource(R.string.no))
 
             if (!model.description.isNullOrBlank()) {
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    text = "Description",
+                    text = stringResource(R.string.description),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary
                 )

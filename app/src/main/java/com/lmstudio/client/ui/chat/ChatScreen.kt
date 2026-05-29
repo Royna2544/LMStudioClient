@@ -98,10 +98,12 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.lmstudio.client.R
 import com.lmstudio.client.data.api.dto.briefContextLength
 import com.lmstudio.client.ui.components.MessageBubble
 import kotlinx.coroutines.launch
@@ -274,8 +276,8 @@ fun ChatScreen(
                 showNotificationPermissionDialog = false
                 pendingGenerationRequest = null
             },
-            title = { Text("Enable notifications") },
-            text = { Text("Allow notifications so generation can continue in the background.") },
+            title = { Text(stringResource(R.string.enable_notifications)) },
+            text = { Text(stringResource(R.string.notification_permission_message)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -283,7 +285,7 @@ fun ChatScreen(
                         notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     }
                 ) {
-                    Text("OK")
+                    Text(stringResource(R.string.ok))
                 }
             }
         )
@@ -297,7 +299,7 @@ fun ChatScreen(
                     navigationIcon = {
                         if (showHistoryButton) {
                             IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                                Icon(Icons.Default.Menu, contentDescription = "Chat history")
+                                Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.chat_history_cd))
                             }
                         }
                     },
@@ -310,17 +312,19 @@ fun ChatScreen(
                                 Column {
                                     Text(
                                         text = when {
-                                            uiState.isLoadingModels -> "Loading models…"
-                                            uiState.selectedModel.isEmpty() -> "Select a model"
+                                            uiState.isLoadingModels -> stringResource(R.string.loading_models)
+                                            uiState.selectedModel.isEmpty() -> stringResource(R.string.select_model)
                                             else -> uiState.selectedModel.substringAfterLast('/')
                                         },
                                         style = MaterialTheme.typography.titleMedium,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
+                                    val loadedLabel = stringResource(R.string.loaded)
+                                    val temporaryLabel = stringResource(R.string.temporary)
                                     val briefInfo = selectedModelData?.let { m ->
                                         buildString {
-                                            if (m.isLoaded) append("Loaded")
+                                            if (m.isLoaded) append(loadedLabel)
                                             m.quantization?.takeIf { it.isNotBlank() }?.let {
                                                 if (isNotEmpty()) append(" · ")
                                                 append(it)
@@ -333,7 +337,7 @@ fun ChatScreen(
                                         }
                                     }.orEmpty()
                                     val statusInfo = buildString {
-                                        if (uiState.isTemporaryChat) append("Temporary")
+                                        if (uiState.isTemporaryChat) append(temporaryLabel)
                                         if (briefInfo.isNotBlank()) {
                                             if (isNotEmpty()) append(" · ")
                                             append(briefInfo)
@@ -350,7 +354,7 @@ fun ChatScreen(
                                 }
                                 Icon(
                                     imageVector = Icons.Default.ArrowDropDown,
-                                    contentDescription = "Model picker"
+                                    contentDescription = stringResource(R.string.model_picker_cd)
                                 )
                             }
 
@@ -360,7 +364,7 @@ fun ChatScreen(
                             ) {
                                 if (uiState.availableModels.isEmpty()) {
                                     DropdownMenuItem(
-                                        text = { Text("No models found") },
+                                        text = { Text(stringResource(R.string.no_models_found)) },
                                         onClick = { showModelDropdown = false }
                                     )
                                 } else {
@@ -403,7 +407,7 @@ fun ChatScreen(
                                 }
                                 HorizontalDivider()
                                 DropdownMenuItem(
-                                    text = { Text("Refresh models") },
+                                    text = { Text(stringResource(R.string.refresh_models)) },
                                     leadingIcon = {
                                         Icon(Icons.Default.Refresh, contentDescription = null)
                                     },
@@ -418,15 +422,15 @@ fun ChatScreen(
                     actions = {
                         if (uiState.messages.isNotEmpty()) {
                             IconButton(onClick = { viewModel.clearMessages() }) {
-                                Icon(Icons.Default.Delete, contentDescription = "Clear chat")
+                                Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.clear_chat_cd))
                             }
                         }
                         if (uiState.selectedModel.isNotEmpty()) {
                             IconButton(onClick = { showModelInfo = true }) {
-                                Icon(Icons.Default.Info, contentDescription = "Model info")
+                                Icon(Icons.Default.Info, contentDescription = stringResource(R.string.model_info_cd))
                             }
                             IconButton(onClick = { showChatSettings = true }) {
-                                Icon(Icons.Default.Tune, contentDescription = "Chat settings")
+                                Icon(Icons.Default.Tune, contentDescription = stringResource(R.string.chat_settings_cd))
                             }
                         }
                         IconButton(
@@ -435,7 +439,7 @@ fun ChatScreen(
                                 onNavigateToSettings()
                             }
                         ) {
-                            Icon(Icons.Default.Settings, contentDescription = "Settings")
+                            Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.settings))
                         }
                     }
                 )
@@ -469,7 +473,7 @@ fun ChatScreen(
                             IconButton(onClick = { viewModel.dismissNotice() }) {
                                 Icon(
                                     Icons.Default.Close,
-                                    contentDescription = "Dismiss",
+                                    contentDescription = stringResource(R.string.dismiss_cd),
                                     tint = Color(0xFF5F4300)
                                 )
                             }
@@ -499,7 +503,7 @@ fun ChatScreen(
                             IconButton(onClick = { viewModel.dismissError() }) {
                                 Icon(
                                     Icons.Default.Close,
-                                    contentDescription = "Dismiss",
+                                    contentDescription = stringResource(R.string.dismiss_cd),
                                     tint = MaterialTheme.colorScheme.onErrorContainer
                                 )
                             }
@@ -533,16 +537,16 @@ fun ChatScreen(
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Text(
-                                        "LM Studio Client",
+                                        stringResource(R.string.app_name),
                                         style = MaterialTheme.typography.headlineSmall,
                                         color = MaterialTheme.colorScheme.primary
                                     )
                                     Spacer(Modifier.height(8.dp))
                                     Text(
                                         if (uiState.selectedModel.isEmpty())
-                                            "Select a model from the toolbar above"
+                                            stringResource(R.string.select_model_hint)
                                         else
-                                            "Type a message to start chatting",
+                                            stringResource(R.string.start_chat_hint),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.outline
                                     )
@@ -620,7 +624,7 @@ fun ChatScreen(
                                         },
                                         trailingIcon = {
                                             IconButton(onClick = { viewModel.removeAttachment(attachment.id) }) {
-                                                Icon(Icons.Default.Close, contentDescription = "Remove attachment")
+                                                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.remove_attachment_cd))
                                             }
                                         }
                                     )
@@ -633,14 +637,14 @@ fun ChatScreen(
                                     onClick = { showAttachmentMenu = true },
                                     enabled = !uiState.isStreaming
                                 ) {
-                                    Icon(Icons.Default.AttachFile, contentDescription = "Attach")
+                                    Icon(Icons.Default.AttachFile, contentDescription = stringResource(R.string.attach_cd))
                                 }
                                 DropdownMenu(
                                     expanded = showAttachmentMenu,
                                     onDismissRequest = { showAttachmentMenu = false }
                                 ) {
                                     DropdownMenuItem(
-                                        text = { Text("Photo from gallery") },
+                                        text = { Text(stringResource(R.string.photo_from_gallery)) },
                                         leadingIcon = { Icon(Icons.Default.Image, contentDescription = null) },
                                         onClick = {
                                             showAttachmentMenu = false
@@ -650,7 +654,7 @@ fun ChatScreen(
                                         }
                                     )
                                     DropdownMenuItem(
-                                        text = { Text("Text document") },
+                                        text = { Text(stringResource(R.string.text_document)) },
                                         leadingIcon = { Icon(Icons.Default.Description, contentDescription = null) },
                                         onClick = {
                                             showAttachmentMenu = false
@@ -664,7 +668,7 @@ fun ChatScreen(
                             OutlinedTextField(
                                 value = uiState.inputText,
                                 onValueChange = { viewModel.updateInputText(it) },
-                                placeholder = { Text("Message…") },
+                                placeholder = { Text(stringResource(R.string.message_placeholder)) },
                                 modifier = Modifier.weight(1f),
                                 maxLines = 5,
                                 enabled = !uiState.isStreaming,
@@ -678,7 +682,7 @@ fun ChatScreen(
                                         containerColor = MaterialTheme.colorScheme.error
                                     )
                                 ) {
-                                    Icon(Icons.Default.Stop, contentDescription = "Stop generation")
+                                    Icon(Icons.Default.Stop, contentDescription = stringResource(R.string.stop_generation_cd))
                                 }
                             } else {
                                 FilledIconButton(
@@ -688,7 +692,7 @@ fun ChatScreen(
                                     enabled = (uiState.inputText.isNotBlank() || uiState.pendingAttachments.isNotEmpty()) &&
                                         uiState.selectedModel.isNotEmpty()
                                 ) {
-                                    Icon(Icons.Default.Send, contentDescription = "Send")
+                                    Icon(Icons.Default.Send, contentDescription = stringResource(R.string.send_cd))
                                 }
                             }
                         }
@@ -799,7 +803,7 @@ private fun UiMessage.generationSeconds(): Double? {
 
 private fun copyResponseText(context: Context, text: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    clipboard.setPrimaryClip(ClipData.newPlainText("LM Studio response", text))
+    clipboard.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.clipboard_response_label), text))
 }
 
 private fun shareResponseText(context: Context, text: String) {
@@ -807,7 +811,7 @@ private fun shareResponseText(context: Context, text: String) {
         type = "text/plain"
         putExtra(Intent.EXTRA_TEXT, text)
     }
-    context.startActivity(Intent.createChooser(intent, "Share response"))
+    context.startActivity(Intent.createChooser(intent, context.getString(R.string.share_response)))
 }
 
 private fun attachImageFromUri(
@@ -819,13 +823,13 @@ private fun attachImageFromUri(
     try {
         val resolver = context.contentResolver
         val mimeType = resolver.getType(uri) ?: "image/*"
-        val name = resolver.displayName(uri) ?: "Image"
+        val name = resolver.displayName(uri) ?: context.getString(R.string.default_image_name)
         val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
-            ?: throw IllegalArgumentException("Could not read selected image")
+            ?: throw IllegalArgumentException(context.getString(R.string.attach_image_read_error))
         val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
         onAttach(name, mimeType, "data:$mimeType;base64,$encoded")
     } catch (e: Exception) {
-        onError("Could not attach image: ${e.message}")
+        onError(context.getString(R.string.attach_image_error, e.message.orEmpty()))
     }
 }
 
@@ -838,13 +842,13 @@ private fun attachTextFromUri(
     try {
         val resolver = context.contentResolver
         val mimeType = resolver.getType(uri) ?: "text/plain"
-        val name = resolver.displayName(uri) ?: "Text document"
+        val name = resolver.displayName(uri) ?: context.getString(R.string.text_document)
         val text = resolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8).use { reader ->
             reader?.readText()
-        } ?: throw IllegalArgumentException("Could not read selected text document")
+        } ?: throw IllegalArgumentException(context.getString(R.string.attach_text_read_error))
         onAttach(name, mimeType, text)
     } catch (e: Exception) {
-        onError("Could not attach text document: ${e.message}")
+        onError(context.getString(R.string.attach_text_error, e.message.orEmpty()))
     }
 }
 
@@ -943,15 +947,15 @@ private fun ChatHistoryContent(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Chat History",
+                text = stringResource(R.string.chat_history),
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.titleMedium
             )
             TextButton(onClick = onTemporaryChat) {
-                Text("Temporary")
+                Text(stringResource(R.string.temporary))
             }
             IconButton(onClick = onNewChat) {
-                Icon(Icons.Default.Add, contentDescription = "New chat")
+                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.new_chat_cd))
             }
         }
         HorizontalDivider()
@@ -961,7 +965,7 @@ private fun ChatHistoryContent(
         ) {
             if (pinnedSessions.isNotEmpty()) {
                 item(key = "pinned-section") {
-                    DrawerSectionLabel("Pinned Chat")
+                    DrawerSectionLabel(stringResource(R.string.pinned_chat))
                 }
                 items(pinnedSessions, key = { it.id }) { session ->
                     SwipeableChatHistoryItem(
@@ -976,7 +980,7 @@ private fun ChatHistoryContent(
             if (recentSessions.isNotEmpty()) {
                 if (pinnedSessions.isNotEmpty()) {
                     item(key = "recent-section") {
-                        DrawerSectionLabel("Recent Chats")
+                        DrawerSectionLabel(stringResource(R.string.recent_chats))
                     }
                 }
                 items(recentSessions, key = { it.id }) { session ->
@@ -1080,12 +1084,12 @@ private fun SwipeableChatHistoryItem(
                     )
                     when {
                         session.isTemporary -> Text(
-                            text = "Temporary",
+                            text = stringResource(R.string.temporary),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         session.isPinned -> Text(
-                            text = "Pinned",
+                            text = stringResource(R.string.pinned),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

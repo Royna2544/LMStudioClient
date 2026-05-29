@@ -36,9 +36,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.lmstudio.client.R
 import com.lmstudio.client.data.preferences.AppPreferences
 import com.lmstudio.client.data.preferences.SearchProvider
 import com.lmstudio.client.ui.chat.LOCAL_TOOL_INFOS
@@ -57,12 +59,12 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Settings") },
+                title = { Text(stringResource(R.string.settings)) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
+                            contentDescription = stringResource(R.string.back_cd)
                         )
                     }
                 }
@@ -77,7 +79,7 @@ fun SettingsScreen(
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
             Text(
-                text = "LM Studio Connection",
+                text = stringResource(R.string.lm_studio_connection),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.primary
             )
@@ -85,20 +87,20 @@ fun SettingsScreen(
             OutlinedTextField(
                 value = uiState.baseUrl,
                 onValueChange = { viewModel.updateBaseUrl(it) },
-                label = { Text("Base URL") },
-                placeholder = { Text("http://10.0.2.2:1234") },
+                label = { Text(stringResource(R.string.base_url)) },
+                placeholder = { Text(stringResource(R.string.base_url_placeholder)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 supportingText = {
-                    Text("10.0.2.2 = emulator localhost  •  use your PC's LAN IP for a real device")
+                    Text(stringResource(R.string.base_url_help))
                 }
             )
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
                 value = uiState.bearerToken,
                 onValueChange = { viewModel.updateBearerToken(it) },
-                label = { Text("Bearer Token") },
-                placeholder = { Text("Optional — leave blank if not required") },
+                label = { Text(stringResource(R.string.bearer_token)) },
+                placeholder = { Text(stringResource(R.string.optional_token_placeholder)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 visualTransformation = if (tokenVisible) VisualTransformation.None else PasswordVisualTransformation(),
@@ -106,24 +108,28 @@ fun SettingsScreen(
                     IconButton(onClick = { tokenVisible = !tokenVisible }) {
                         Icon(
                             imageVector = if (tokenVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                            contentDescription = if (tokenVisible) "Hide token" else "Show token"
+                            contentDescription = if (tokenVisible) {
+                                stringResource(R.string.hide_token_cd)
+                            } else {
+                                stringResource(R.string.show_token_cd)
+                            }
                         )
                     }
                 },
-                supportingText = { Text("Sent as Authorization: Bearer <token> on every request") }
+                supportingText = { Text(stringResource(R.string.bearer_token_help)) }
             )
             Spacer(Modifier.height(16.dp))
             HorizontalDivider()
             Spacer(Modifier.height(16.dp))
 
             Text(
-                text = "Web Search",
+                text = stringResource(R.string.web_search),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.primary
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "Search providers are configured here. Web search tools will use the selected provider when enabled.",
+                text = stringResource(R.string.web_search_help),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -137,8 +143,8 @@ fun SettingsScreen(
                 OutlinedTextField(
                     value = uiState.braveSearchApiKey,
                     onValueChange = viewModel::updateBraveSearchApiKey,
-                    label = { Text("Brave Search API Key") },
-                    placeholder = { Text("Required for Brave Search") },
+                    label = { Text(stringResource(R.string.brave_search_api_key)) },
+                    placeholder = { Text(stringResource(R.string.brave_search_api_key_placeholder)) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     visualTransformation = if (braveKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
@@ -146,11 +152,15 @@ fun SettingsScreen(
                         IconButton(onClick = { braveKeyVisible = !braveKeyVisible }) {
                             Icon(
                                 imageVector = if (braveKeyVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                                contentDescription = if (braveKeyVisible) "Hide API key" else "Show API key"
+                                contentDescription = if (braveKeyVisible) {
+                                    stringResource(R.string.hide_api_key_cd)
+                                } else {
+                                    stringResource(R.string.show_api_key_cd)
+                                }
                             )
                         }
                     },
-                    supportingText = { Text("Stored locally and sent only to the configured Brave Search endpoint.") }
+                    supportingText = { Text(stringResource(R.string.brave_search_help)) }
                 )
             }
             Spacer(Modifier.height(16.dp))
@@ -158,14 +168,14 @@ fun SettingsScreen(
             Spacer(Modifier.height(16.dp))
 
             Text(
-                text = "Chat UI",
+                text = stringResource(R.string.chat_ui),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.primary
             )
             Spacer(Modifier.height(8.dp))
             LocalToolToggleRow(
-                name = "Fold thinking by default",
-                description = "Completed thinking blocks start collapsed.",
+                name = stringResource(R.string.fold_thinking_by_default),
+                description = stringResource(R.string.fold_thinking_by_default_help),
                 checked = uiState.foldThinkingByDefault,
                 onCheckedChange = viewModel::updateFoldThinkingByDefault
             )
@@ -174,13 +184,13 @@ fun SettingsScreen(
             Spacer(Modifier.height(16.dp))
 
             Text(
-                text = "Local MCP Tools",
+                text = stringResource(R.string.local_mcp_tools),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.primary
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "Enabled tools are advertised to the model and may send their returned local data back in the next request.",
+                text = stringResource(R.string.local_mcp_tools_help),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -203,7 +213,7 @@ fun SettingsScreen(
                 onClick = { viewModel.saveAndClose(onNavigateBack) },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Save & Go Back")
+                Text(stringResource(R.string.save_and_go_back))
             }
 
             Spacer(Modifier.height(24.dp))
@@ -211,17 +221,13 @@ fun SettingsScreen(
             Spacer(Modifier.height(16.dp))
 
             Text(
-                text = "Setup checklist",
+                text = stringResource(R.string.setup_checklist),
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.secondary
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "1. Open LM Studio on your PC\n" +
-                       "2. Load a model in the chat view\n" +
-                       "3. Go to Local Server tab and click Start Server\n" +
-                       "4. Set the URL here and tap Save\n" +
-                       "5. Tap Refresh models in the chat toolbar",
+                text = stringResource(R.string.setup_checklist_steps),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -241,7 +247,7 @@ private fun SearchProviderPicker(
             onClick = { expanded = true },
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text(selectedProvider.label)
+            Text(selectedProvider.labelText())
         }
         DropdownMenu(
             expanded = expanded,
@@ -251,9 +257,9 @@ private fun SearchProviderPicker(
                 DropdownMenuItem(
                     text = {
                         Column {
-                            Text(provider.label)
+                            Text(provider.labelText())
                             Text(
-                                text = provider.description,
+                                text = provider.descriptionText(),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -270,6 +276,20 @@ private fun SearchProviderPicker(
 }
 
 @Composable
+private fun SearchProvider.labelText(): String =
+    when (this) {
+        SearchProvider.DISABLED -> stringResource(R.string.search_provider_disabled)
+        SearchProvider.BRAVE -> stringResource(R.string.search_provider_brave)
+    }
+
+@Composable
+private fun SearchProvider.descriptionText(): String =
+    when (this) {
+        SearchProvider.DISABLED -> stringResource(R.string.search_provider_disabled_help)
+        SearchProvider.BRAVE -> stringResource(R.string.search_provider_brave_help)
+    }
+
+@Composable
 private fun LocalToolRoundsControl(
     rounds: Int,
     onRoundsChange: (Int) -> Unit
@@ -282,12 +302,12 @@ private fun LocalToolRoundsControl(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Max tool rounds",
+                    text = stringResource(R.string.max_tool_rounds),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "Limits repeated tool-call loops in one user turn.",
+                    text = stringResource(R.string.max_tool_rounds_help),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

@@ -25,7 +25,9 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.lmstudio.client.R
 import kotlin.math.round
 import kotlin.math.roundToInt
 
@@ -47,19 +49,19 @@ fun ChatSettingsSheet(
                 .padding(horizontal = 20.dp)
                 .navigationBarsPadding()
         ) {
-            Text("Chat Settings", style = MaterialTheme.typography.headlineSmall)
+            Text(stringResource(R.string.chat_settings), style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(16.dp))
             HorizontalDivider()
             Spacer(Modifier.height(12.dp))
 
             // System prompt
-            Text("System Prompt", style = MaterialTheme.typography.labelMedium,
+            Text(stringResource(R.string.system_prompt), style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(4.dp))
             OutlinedTextField(
                 value = settings.systemPrompt,
                 onValueChange = { onSettingsChange(settings.copy(systemPrompt = it)) },
-                placeholder = { Text("Optional system message…") },
+                placeholder = { Text(stringResource(R.string.optional_system_message)) },
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 2,
                 maxLines = 5
@@ -71,13 +73,13 @@ fun ChatSettingsSheet(
 
             // Stream toggle
             SettingRowToggle(
-                label = "Streaming",
+                label = stringResource(R.string.streaming),
                 checked = settings.stream,
                 onCheckedChange = { onSettingsChange(settings.copy(stream = it)) }
             )
 
             SettingRowToggle(
-                label = "Save Chat History on LM Studio",
+                label = stringResource(R.string.save_chat_history_lm_studio),
                 checked = settings.saveRemoteHistory,
                 onCheckedChange = { onSettingsChange(settings.copy(saveRemoteHistory = it)) }
             )
@@ -86,7 +88,7 @@ fun ChatSettingsSheet(
 
             // Temperature
             SliderSetting(
-                label = "Temperature",
+                label = stringResource(R.string.temperature),
                 value = settings.temperature.clampTemperature(),
                 valueRange = MIN_TEMPERATURE..MAX_TEMPERATURE,
                 steps = 9,
@@ -96,7 +98,7 @@ fun ChatSettingsSheet(
 
             // Top-P
             SliderSetting(
-                label = "Top-P",
+                label = stringResource(R.string.top_p),
                 value = settings.topP,
                 valueRange = 0f..1f,
                 steps = 99,
@@ -106,7 +108,7 @@ fun ChatSettingsSheet(
 
             // Top-K (integer)
             SliderSetting(
-                label = "Top-K",
+                label = stringResource(R.string.top_k),
                 value = settings.topK.toFloat(),
                 valueRange = 1f..200f,
                 steps = 198,
@@ -116,7 +118,7 @@ fun ChatSettingsSheet(
 
             // Min-P
             SliderSetting(
-                label = "Min-P",
+                label = stringResource(R.string.min_p),
                 value = settings.minP,
                 valueRange = 0f..1f,
                 steps = 99,
@@ -128,13 +130,13 @@ fun ChatSettingsSheet(
 
             // Repeat penalty toggle
             SettingRowToggle(
-                label = "Repeat Penalty",
+                label = stringResource(R.string.repeat_penalty),
                 checked = settings.repeatPenaltyEnabled,
                 onCheckedChange = { onSettingsChange(settings.copy(repeatPenaltyEnabled = it)) }
             )
 
             SliderSetting(
-                label = "Penalty Ratio",
+                label = stringResource(R.string.penalty_ratio),
                 value = settings.repeatPenalty,
                 valueRange = 1f..2f,
                 steps = 19,
@@ -147,7 +149,7 @@ fun ChatSettingsSheet(
             Spacer(Modifier.height(12.dp))
 
             // Reasoning mode
-            Text("Reasoning Mode", style = MaterialTheme.typography.labelMedium,
+            Text(stringResource(R.string.reasoning_mode), style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(8.dp))
             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
@@ -159,7 +161,7 @@ fun ChatSettingsSheet(
                             index = index,
                             count = ReasoningMode.entries.size
                         ),
-                        label = { Text(mode.label) }
+                        label = { Text(mode.labelText()) }
                     )
                 }
             }
@@ -168,6 +170,14 @@ fun ChatSettingsSheet(
         }
     }
 }
+
+@Composable
+private fun ReasoningMode.labelText(): String =
+    when (this) {
+        ReasoningMode.OFF -> stringResource(R.string.reasoning_off)
+        ReasoningMode.AUTO -> stringResource(R.string.reasoning_auto)
+        ReasoningMode.ON -> stringResource(R.string.reasoning_on)
+    }
 
 private fun Float.roundToTenths(): Float = roundToPlaces(10f)
 

@@ -38,10 +38,10 @@ class GenerationForegroundService : Service() {
     private fun ensureNotificationChannel() {
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "Generation",
+            getString(R.string.generation_notification_channel),
             NotificationManager.IMPORTANCE_LOW
         ).apply {
-            description = "Shown while LM Studio is generating a response."
+            description = getString(R.string.generation_notification_channel_description)
             setShowBadge(false)
             enableVibration(false)
             setSound(null, null)
@@ -62,8 +62,8 @@ class GenerationForegroundService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("LM Studio Client")
-            .setContentText("Model is generating response...")
+            .setContentTitle(getString(R.string.app_name))
+            .setContentText(getString(R.string.generation_notification_text))
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
