@@ -14,7 +14,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.google.gson.Gson
-import com.google.gson.JsonParser
 import com.google.gson.reflect.TypeToken
 import com.lmstudio.client.data.api.dto.ChatInputItem
 import com.lmstudio.client.data.api.dto.ChatMessage
@@ -341,6 +340,7 @@ class ChatViewModel(
             history = history,
             useRemoteContinuation = requestSettings.saveRemoteHistory,
             enabledLocalTools = state.enabledLocalTools,
+            remainingLocalToolRounds = MAX_LOCAL_TOOL_ROUNDS,
             allowLocalTools = true
         )
     }
@@ -393,6 +393,7 @@ class ChatViewModel(
             history = history,
             useRemoteContinuation = false,
             enabledLocalTools = state.enabledLocalTools,
+            remainingLocalToolRounds = MAX_LOCAL_TOOL_ROUNDS,
             allowLocalTools = true
         )
     }
@@ -444,10 +445,11 @@ class ChatViewModel(
         history: List<UiMessage>,
         useRemoteContinuation: Boolean,
         enabledLocalTools: Set<String>,
+        remainingLocalToolRounds: Int,
         allowLocalTools: Boolean
     ) {
         val previousResponseId = if (useRemoteContinuation) remoteResponseId else null
-        val activeLocalTools = if (allowLocalTools) {
+        val activeLocalTools = if (allowLocalTools && remainingLocalToolRounds > 0) {
             buildLocalTools(applicationContext).filter { it.info.name in enabledLocalTools }
         } else {
             emptyList()
@@ -539,28 +541,35 @@ class ChatViewModel(
                 persistChatHistory()
             } finally {
                 val flushed = thinkTagState.flush()
-                val pendingToolCall = if (!streamFailed && activeLocalTools.isNotEmpty()) {
+                val pendingToolCalls = if (!streamFailed && activeLocalTools.isNotEmpty()) {
                     val lastMessage = _uiState.value.messages.lastOrNull()
                     lastMessage
                         ?.takeIf { it.role == "assistant" && it.isStreaming }
-                        ?.let { parseLocalToolCall(it.content + flushed.content) }
+                        ?.let {
+                            parseLocalToolCalls(
+                                it.content + flushed.content + "\n" + it.thinkingContent + flushed.thinking
+                            )
+                        }
+                        .orEmpty()
                 } else {
-                    null
+                    emptyList()
                 }
 
-                if (pendingToolCall != null) {
-                    val toolIndex = nextToolCallIndex(_uiState.value.messages)
-                    val toolLine = buildToolThinkingLine(toolIndex, pendingToolCall.name)
+                if (pendingToolCalls.isNotEmpty()) {
+                    val firstToolIndex = nextToolCallIndex(_uiState.value.messages)
+                    val toolLines = pendingToolCalls.mapIndexed { offset, call ->
+                        buildToolThinkingLine(firstToolIndex + offset, call.name)
+                    }
                     _uiState.update { current ->
                         val msgs = current.messages.toMutableList()
                         val last = msgs.lastIndex
                         val previousThinking = if (last >= 0 && msgs[last].isStreaming) {
                             val previousAssistant = msgs.removeAt(last)
-                            previousAssistant.thinkingContent + flushed.thinking
+                            (previousAssistant.thinkingContent + flushed.thinking).withoutToolCallBlocks()
                         } else {
-                            flushed.thinking
+                            flushed.thinking.withoutToolCallBlocks()
                         }
-                        val thinkingContent = previousThinking.withToolThinkingLine(toolLine)
+                        val thinkingContent = previousThinking.withToolThinkingLines(toolLines)
                         val now = System.currentTimeMillis()
                         val assistantPlaceholder = UiMessage(
                             role = "assistant",
@@ -572,15 +581,17 @@ class ChatViewModel(
                         current.withCurrentSession(messages = msgs + assistantPlaceholder)
                             .copy(isStreaming = true)
                     }
-                    val toolResult = executeLocalTool(toolIndex, pendingToolCall, activeLocalTools)
-                    val uiToolCall = toolResult.toUiToolCall()
-                    val toolPrompt = buildLocalToolResultPrompt(toolResult)
+                    val toolResults = pendingToolCalls.mapIndexed { offset, call ->
+                        executeLocalTool(firstToolIndex + offset, call, activeLocalTools)
+                    }
+                    val uiToolCalls = toolResults.map { it.toUiToolCall() }
+                    val toolPrompt = buildLocalToolResultPrompt(toolResults)
                     _uiState.update { current ->
                         val msgs = current.messages.toMutableList()
                         val last = msgs.lastIndex
                         if (last >= 0 && msgs[last].isStreaming) {
                             val msg = msgs[last]
-                            msgs[last] = msg.copy(toolCalls = msg.toolCalls + uiToolCall)
+                            msgs[last] = msg.copy(toolCalls = msg.toolCalls + uiToolCalls)
                         }
                         current.withCurrentSession(messages = msgs).copy(isStreaming = true)
                     }
@@ -596,7 +607,8 @@ class ChatViewModel(
                         history = _uiState.value.messages,
                         useRemoteContinuation = false,
                         enabledLocalTools = _uiState.value.enabledLocalTools,
-                        allowLocalTools = false
+                        remainingLocalToolRounds = remainingLocalToolRounds - 1,
+                        allowLocalTools = true
                     )
                     return@launch
                 }
@@ -823,6 +835,7 @@ class ChatViewModel(
 
 private const val DEFAULT_CHAT_TITLE = "New chat"
 private const val TEMPORARY_CHAT_TITLE = "Temporary chat"
+private const val MAX_LOCAL_TOOL_ROUNDS = 4
 private val CHAT_SESSION_LIST_TYPE = object : TypeToken<List<ChatSession>>() {}.type
 
 private fun Float.toApiDecimal(scale: Int): Double =
@@ -1112,9 +1125,9 @@ private fun toolInfo(name: String): LocalToolInfo =
     LOCAL_TOOL_INFOS.first { it.name == name }
 
 private fun buildLocalToolPrompt(localTools: List<LocalToolDefinition>): String = buildString {
-    appendLine("Local tools are available. To call one, respond only with:")
+    appendLine("Local tools are available. To call one or more tools, respond only with one or more blocks:")
     appendLine("<tool_call>{\"name\":\"tool.name\",\"arguments\":{}}</tool_call>")
-    appendLine("Do not add prose around a tool call. After a tool result is provided, answer normally.")
+    appendLine("Do not add prose around tool calls. After tool results are provided, answer normally.")
     appendLine("Available local tools:")
     localTools.forEach { tool ->
         appendLine("- ${tool.info.name}: ${tool.info.description} Parameters JSON schema: ${tool.parameters}")
@@ -1266,44 +1279,89 @@ private fun appInfo(context: Context): String {
     )
 }
 
-private fun parseLocalToolCall(content: String): LocalToolCall? {
-    val rawJson = content.substringBetweenToolCallTags() ?: return null
-    return try {
-        val root = JsonParser.parseString(rawJson)
-        if (!root.isJsonObject) return null
-
-        val obj = root.asJsonObject
-        val name = listOf("name", "tool")
-            .firstNotNullOfOrNull { key ->
-                obj.get(key)?.takeIf { it.isJsonPrimitive }?.asString
-            }
-            ?.takeIf { it.isNotBlank() }
-            ?: return null
-        val args = obj.get("arguments")
-            ?.takeIf { it.isJsonObject }
-            ?.asJsonObject
-            ?.entrySet()
-            ?.associate { (key, value) ->
-                val argValue = if (value.isJsonPrimitive) value.asString else value.toString()
-                key to argValue
-            }
-            .orEmpty()
-
-        LocalToolCall(name = name, arguments = args)
-    } catch (_: Exception) {
-        null
+private fun parseLocalToolCalls(content: String): List<LocalToolCall> =
+    content.toolCallJsonBlocks().flatMap { rawJson ->
+        parseLocalToolCallsJson(rawJson)
     }
+
+private fun parseLocalToolCallsJson(rawJson: String): List<LocalToolCall> = try {
+    val parser = com.google.gson.JsonStreamParser(rawJson)
+    buildList {
+        while (parser.hasNext()) {
+            addAll(parser.next().toLocalToolCalls())
+        }
+    }
+} catch (_: Exception) {
+    emptyList()
 }
 
-private fun String.substringBetweenToolCallTags(): String? {
-    val openStart = indexOf(TOOL_CALL_OPEN_TAG, ignoreCase = true)
-    if (openStart < 0) return null
+private fun com.google.gson.JsonElement.toLocalToolCalls(): List<LocalToolCall> =
+    when {
+        isJsonObject -> listOfNotNull(asJsonObject.toLocalToolCallOrNull())
+        isJsonArray -> asJsonArray.mapNotNull { element ->
+            element.takeIf { it.isJsonObject }?.asJsonObject?.toLocalToolCallOrNull()
+        }
+        else -> emptyList()
+    }
 
-    val contentStart = openStart + TOOL_CALL_OPEN_TAG.length
-    val closeStart = indexOf(TOOL_CALL_CLOSE_TAG, startIndex = contentStart, ignoreCase = true)
-    if (closeStart < 0) return null
+private fun com.google.gson.JsonObject.toLocalToolCallOrNull(): LocalToolCall? {
+    val name = listOf("name", "tool")
+        .firstNotNullOfOrNull { key ->
+            get(key)?.takeIf { it.isJsonPrimitive }?.asString
+        }
+        ?.takeIf { it.isNotBlank() }
+        ?: return null
+    val args = get("arguments")
+        ?.takeIf { it.isJsonObject }
+        ?.asJsonObject
+        ?.entrySet()
+        ?.associate { (key, value) ->
+            val argValue = if (value.isJsonPrimitive) value.asString else value.toString()
+            key to argValue
+        }
+        .orEmpty()
 
-    return substring(contentStart, closeStart).trim().takeIf { it.isNotBlank() }
+    return LocalToolCall(name = name, arguments = args)
+}
+
+private fun String.toolCallJsonBlocks(): List<String> {
+    val blocks = mutableListOf<String>()
+    var searchStart = 0
+    while (searchStart < length) {
+        val openStart = indexOf(TOOL_CALL_OPEN_TAG, startIndex = searchStart, ignoreCase = true)
+        if (openStart < 0) break
+
+        val contentStart = openStart + TOOL_CALL_OPEN_TAG.length
+        val closeStart = indexOf(TOOL_CALL_CLOSE_TAG, startIndex = contentStart, ignoreCase = true)
+        if (closeStart < 0) break
+
+        substring(contentStart, closeStart).trim()
+            .takeIf { it.isNotBlank() }
+            ?.let { blocks.add(it) }
+        searchStart = closeStart + TOOL_CALL_CLOSE_TAG.length
+    }
+    return blocks
+}
+
+private fun String.withoutToolCallBlocks(): String {
+    val cleaned = StringBuilder()
+    var searchStart = 0
+    while (searchStart < length) {
+        val openStart = indexOf(TOOL_CALL_OPEN_TAG, startIndex = searchStart, ignoreCase = true)
+        if (openStart < 0) {
+            cleaned.append(substring(searchStart))
+            break
+        }
+
+        cleaned.append(substring(searchStart, openStart))
+        val contentStart = openStart + TOOL_CALL_OPEN_TAG.length
+        val closeStart = indexOf(TOOL_CALL_CLOSE_TAG, startIndex = contentStart, ignoreCase = true)
+        if (closeStart < 0) {
+            break
+        }
+        searchStart = closeStart + TOOL_CALL_CLOSE_TAG.length
+    }
+    return cleaned.toString().trim()
 }
 
 private fun executeLocalTool(
@@ -1340,15 +1398,19 @@ private fun executeLocalTool(
     }
 }
 
-private fun buildLocalToolResultPrompt(result: LocalToolResult): String = buildString {
-    appendLine("Local tool result")
-    appendLine("tool: ${result.call.name}")
-    appendLine("status: ${if (result.succeeded) "success" else "failure"}")
-    appendLine("duration_ms: ${result.durationMillis}")
-    appendLine("output:")
-    appendLine(result.output)
+private fun buildLocalToolResultPrompt(results: List<LocalToolResult>): String = buildString {
+    appendLine("Local tool results")
+    results.forEach { result ->
+        appendLine()
+        appendLine("tool_call_index: ${result.index}")
+        appendLine("tool: ${result.call.name}")
+        appendLine("status: ${if (result.succeeded) "success" else "failure"}")
+        appendLine("duration_ms: ${result.durationMillis}")
+        appendLine("output:")
+        appendLine(result.output)
+    }
     appendLine()
-    append("Use this result to answer the user's previous request. Do not call another local tool unless a new tool result is needed.")
+    append("Use these results to answer the user's previous request. Do not call another local tool unless a new tool result is needed.")
 }
 
 private fun LocalToolResult.toUiToolCall(): UiToolCall =
@@ -1368,11 +1430,11 @@ private fun nextToolCallIndex(messages: List<UiMessage>): Int =
 private fun buildToolThinkingLine(index: Int, name: String): String =
     "Tool called #$index: $name"
 
-private fun String.withToolThinkingLine(toolLine: String): String =
+private fun String.withToolThinkingLines(toolLines: List<String>): String =
     if (isBlank()) {
-        toolLine
+        toolLines.joinToString("\n\n")
     } else {
-        trimEnd() + "\n\n" + toolLine
+        trimEnd() + "\n\n" + toolLines.joinToString("\n\n")
     }
 
 private data class ThinkTagState(

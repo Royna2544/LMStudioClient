@@ -148,22 +148,12 @@ fun ChatScreen(
         uiState.availableModels.find { it.id == uiState.selectedModel }
     }
 
-    val messageListSize by remember {
-        derivedStateOf {
-            uiState.messages.size
-        }
-    }
-    val bottomAnchorIndex = uiState.messages.size
-    val streamingContentLength by remember {
-        derivedStateOf {
-            val last = uiState.messages.lastOrNull()
-            if (last?.isStreaming == true) {
-                last.content.length + last.thinkingContent.length
-            } else {
-                0
-            }
-        }
-    }
+    val messageListSize = uiState.messages.size
+    val bottomAnchorIndex = messageListSize
+    val streamingContentLength = uiState.messages.lastOrNull()
+        ?.takeIf { it.isStreaming }
+        ?.let { it.content.length + it.thinkingContent.length }
+        ?: 0
     val shouldFollowStreaming by remember {
         derivedStateOf {
             val layoutInfo = listState.layoutInfo
@@ -180,8 +170,15 @@ fun ChatScreen(
         if (uiState.isStreaming) null else uiState.messages.lastOrNull { it.role == "user" }?.id
     }
 
-    LaunchedEffect(uiState.currentChatId, messageListSize) {
+    LaunchedEffect(uiState.currentChatId) {
         if (uiState.messages.isNotEmpty()) {
+            followStreaming = true
+            listState.scrollToItem(bottomAnchorIndex)
+        }
+    }
+
+    LaunchedEffect(messageListSize, uiState.isStreaming) {
+        if (uiState.isStreaming && uiState.messages.isNotEmpty()) {
             followStreaming = true
             listState.animateScrollToItem(bottomAnchorIndex)
         }
