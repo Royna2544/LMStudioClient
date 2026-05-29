@@ -116,7 +116,6 @@ fun ChatScreen(
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val density = LocalDensity.current
     val hapticFeedback = LocalHapticFeedback.current
     var showModelDropdown by remember { mutableStateOf(false) }
     var showModelInfo by remember { mutableStateOf(false) }
@@ -126,7 +125,6 @@ fun ChatScreen(
     var userPausedStreamingFollow by remember { mutableStateOf(false) }
     var hadActiveGeneration by remember { mutableStateOf(false) }
     var lastAutoScrolledChatId by rememberSaveable { mutableStateOf<String?>(null) }
-    var historyPaneWidthOverride by rememberSaveable { mutableStateOf<Float?>(null) }
 
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -634,7 +632,6 @@ fun ChatScreen(
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val showPersistentHistory = maxWidth >= HISTORY_PANE_BREAKPOINT
-        val availableWidth = maxWidth
 
         LaunchedEffect(showPersistentHistory) {
             if (showPersistentHistory && drawerState.isOpen) {
@@ -643,17 +640,8 @@ fun ChatScreen(
         }
 
         if (showPersistentHistory) {
-            val minHistoryWidthPx = with(density) { HISTORY_PANE_MIN_WIDTH.toPx() }
-            val maxHistoryWidthPx = with(density) {
-                minOf(HISTORY_PANE_MAX_WIDTH.toPx(), availableWidth.toPx() * 0.48f)
-            }
-            val maxHistoryWidthValue = maxHistoryWidthPx / density.density
-            val defaultHistoryWidthValue = (availableWidth.value * HISTORY_PANE_DEFAULT_RATIO)
-                .coerceIn(HISTORY_PANE_MIN_WIDTH_VALUE, maxHistoryWidthValue)
-            val historyPaneWidthValue = (historyPaneWidthOverride ?: defaultHistoryWidthValue)
-                .coerceIn(HISTORY_PANE_MIN_WIDTH_VALUE, maxHistoryWidthValue)
-            val historyPaneWidthDp = historyPaneWidthValue
-                .dp
+            val historyPaneWeight = HISTORY_PANE_DEFAULT_RATIO
+            val chatPaneWeight = 1f - historyPaneWeight
 
             Row(modifier = Modifier.fillMaxSize()) {
                 ChatHistoryPane(
@@ -665,28 +653,13 @@ fun ChatScreen(
                     onPinChat = viewModel::pinChat,
                     onDeleteChat = viewModel::deleteChat,
                     modifier = Modifier
-                        .width(historyPaneWidthDp)
+                        .weight(historyPaneWeight)
                         .fillMaxSize()
                 )
                 Box(
                     modifier = Modifier
                         .width(HISTORY_SPLITTER_WIDTH)
                         .fillMaxSize()
-                        .pointerInput(availableWidth) {
-                            var dragWidthPx = with(density) { historyPaneWidthValue.dp.toPx() }
-                            detectHorizontalDragGestures(
-                                onDragStart = {
-                                    dragWidthPx = with(density) { historyPaneWidthValue.dp.toPx() }
-                                }
-                            ) { change, dragAmount ->
-                                change.consume()
-                                dragWidthPx = (dragWidthPx + dragAmount)
-                                    .coerceIn(minHistoryWidthPx, maxHistoryWidthPx)
-                                historyPaneWidthOverride = with(density) {
-                                    dragWidthPx.toDp().value
-                                }
-                            }
-                        }
                 ) {
                     Box(
                         modifier = Modifier
@@ -696,7 +669,7 @@ fun ChatScreen(
                             .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
                     )
                 }
-                mainContent(false, Modifier.weight(1f))
+                mainContent(false, Modifier.weight(chatPaneWeight))
             }
         } else {
             ModalNavigationDrawer(
@@ -820,12 +793,9 @@ private fun android.content.ContentResolver.displayName(uri: Uri): String? {
 private const val CHAT_BOTTOM_ANCHOR_KEY = "chat-bottom-anchor"
 private const val HISTORY_PANE_DEFAULT_RATIO = 0.3f
 private const val HISTORY_PANE_DEFAULT_WIDTH_VALUE = 320f
-private const val HISTORY_PANE_MIN_WIDTH_VALUE = 240f
 private val HISTORY_PANE_WIDTH = HISTORY_PANE_DEFAULT_WIDTH_VALUE.dp
-private val HISTORY_PANE_MIN_WIDTH = HISTORY_PANE_MIN_WIDTH_VALUE.dp
-private val HISTORY_PANE_MAX_WIDTH = 420.dp
 private val HISTORY_PANE_BREAKPOINT = 600.dp
-private val HISTORY_SPLITTER_WIDTH = 18.dp
+private val HISTORY_SPLITTER_WIDTH = 1.dp
 private val HISTORY_SPLITTER_LINE_WIDTH = 1.dp
 
 @Composable
