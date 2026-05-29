@@ -158,6 +158,9 @@ fun ChatScreen(
             lastVisibleIndex >= lastItemIndex - 1 && lastItemBottom <= viewportBottom + 96
         }
     }
+    val editableUserMessageId = remember(uiState.messages, uiState.isStreaming) {
+        if (uiState.isStreaming) null else uiState.messages.lastOrNull { it.role == "user" }?.id
+    }
 
     LaunchedEffect(uiState.currentChatId, messageListSize) {
         if (uiState.messages.isNotEmpty()) {
@@ -400,8 +403,10 @@ fun ChatScreen(
                                 generationSeconds = message.generationSeconds(),
                                 isThinking = message.isThinking,
                                 isStreaming = message.isStreaming,
+                                canEditUserMessage = message.id == editableUserMessageId,
                                 onCopy = { copyResponseText(context, message.content) },
                                 onShare = { shareResponseText(context, message.content) },
+                                onEdit = { viewModel.editUserMessage(message.id) },
                                 onRetry = { viewModel.retryResponse(message.id) }
                             )
                         }

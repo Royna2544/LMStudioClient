@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -57,8 +58,10 @@ fun MessageBubble(
     generationSeconds: Double? = null,
     isThinking: Boolean = false,
     isStreaming: Boolean = false,
+    canEditUserMessage: Boolean = false,
     onCopy: () -> Unit = {},
     onShare: () -> Unit = {},
+    onEdit: () -> Unit = {},
     onRetry: () -> Unit = {}
 ) {
     Row(
@@ -120,7 +123,14 @@ fun MessageBubble(
                 AttachmentBlock(attachments = attachments)
             }
 
-            if (!isUser && !isStreaming) {
+            if (isUser) {
+                UserActions(
+                    canCopy = content.isNotBlank(),
+                    canEdit = canEditUserMessage,
+                    onCopy = onCopy,
+                    onEdit = onEdit
+                )
+            } else if (!isStreaming) {
                 ResponseStats(
                     tttlSeconds = tttlSeconds,
                     generationSeconds = generationSeconds
@@ -131,6 +141,34 @@ fun MessageBubble(
                     onShare = onShare,
                     onRetry = onRetry
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun UserActions(
+    canCopy: Boolean,
+    canEdit: Boolean,
+    onCopy: () -> Unit,
+    onEdit: () -> Unit
+) {
+    if (!canCopy && !canEdit) return
+
+    Row(
+        modifier = Modifier.padding(top = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        TextButton(enabled = canCopy, onClick = onCopy) {
+            Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(4.dp))
+            Text("Copy", style = MaterialTheme.typography.labelSmall)
+        }
+        if (canEdit) {
+            TextButton(onClick = onEdit) {
+                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Edit", style = MaterialTheme.typography.labelSmall)
             }
         }
     }

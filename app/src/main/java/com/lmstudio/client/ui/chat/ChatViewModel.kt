@@ -310,6 +310,41 @@ class ChatViewModel(
         )
     }
 
+    fun editUserMessage(messageId: String) {
+        _uiState.update { current ->
+            if (current.isStreaming) return@update current
+
+            val messageIndex = current.messages.indexOfFirst {
+                it.id == messageId && it.role == "user"
+            }
+            if (messageIndex < 0) return@update current
+            val hasNewerUserMessage = current.messages
+                .drop(messageIndex + 1)
+                .any { it.role == "user" }
+            if (hasNewerUserMessage) return@update current
+
+            val message = current.messages[messageIndex]
+            val remainingMessages = current.messages.take(messageIndex)
+            val restoredTitle = if (remainingMessages.none { it.role == "user" }) {
+                DEFAULT_CHAT_TITLE
+            } else {
+                null
+            }
+
+            current.copy(
+                messages = remainingMessages,
+                inputText = message.requestText ?: message.content,
+                pendingAttachments = message.requestAttachments,
+                error = null,
+                remoteResponseId = null
+            ).withCurrentSession(
+                messages = remainingMessages,
+                remoteResponseId = null,
+                title = restoredTitle
+            )
+        }
+    }
+
     private fun startResponseStream(
         baseUrl: String,
         bearerToken: String,
