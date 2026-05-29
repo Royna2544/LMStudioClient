@@ -18,6 +18,7 @@ data class SettingsUiState(
     val bearerToken: String = "",
     val searchProvider: SearchProvider = SearchProvider.DISABLED,
     val braveSearchApiKey: String = "",
+    val foldThinkingByDefault: Boolean = AppPreferences.DEFAULT_FOLD_THINKING_BY_DEFAULT,
     val localToolRounds: Int = AppPreferences.DEFAULT_LOCAL_TOOL_ROUNDS,
     val enabledLocalTools: Set<String> = LOCAL_TOOL_INFOS.map { it.name }.toSet()
 )
@@ -49,6 +50,10 @@ class SettingsViewModel(
             _uiState.update { it.copy(localToolRounds = rounds) }
         }
         viewModelScope.launch {
+            val foldThinking = preferences.foldThinkingByDefault.first()
+            _uiState.update { it.copy(foldThinkingByDefault = foldThinking) }
+        }
+        viewModelScope.launch {
             val provider = preferences.searchProvider.first()
             val braveKey = preferences.braveSearchApiKey.first()
             _uiState.update {
@@ -74,6 +79,10 @@ class SettingsViewModel(
 
     fun updateBraveSearchApiKey(apiKey: String) {
         _uiState.update { it.copy(braveSearchApiKey = apiKey) }
+    }
+
+    fun updateFoldThinkingByDefault(fold: Boolean) {
+        _uiState.update { it.copy(foldThinkingByDefault = fold) }
     }
 
     fun updateLocalToolEnabled(name: String, enabled: Boolean) {
@@ -104,6 +113,7 @@ class SettingsViewModel(
             preferences.saveBearerToken(_uiState.value.bearerToken.trim())
             preferences.saveSearchProvider(_uiState.value.searchProvider)
             preferences.saveBraveSearchApiKey(_uiState.value.braveSearchApiKey.trim())
+            preferences.saveFoldThinkingByDefault(_uiState.value.foldThinkingByDefault)
             preferences.saveLocalToolRounds(_uiState.value.localToolRounds)
             preferences.saveDisabledLocalToolNames(
                 LOCAL_TOOL_INFOS.map { it.name }.toSet() - _uiState.value.enabledLocalTools

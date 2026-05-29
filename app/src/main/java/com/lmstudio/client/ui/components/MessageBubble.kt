@@ -61,6 +61,7 @@ fun MessageBubble(
     toolCalls: List<UiToolCall> = emptyList(),
     isThinking: Boolean = false,
     isStreaming: Boolean = false,
+    foldThinkingByDefault: Boolean = true,
     canEditUserMessage: Boolean = false,
     onCopy: () -> Unit = {},
     onShare: () -> Unit = {},
@@ -82,7 +83,11 @@ fun MessageBubble(
             horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
         ) {
             if (!isUser && (thinkingContent.isNotEmpty() || isThinking)) {
-                ThinkingBlock(content = thinkingContent, isThinking = isThinking)
+                ThinkingBlock(
+                    content = thinkingContent,
+                    isThinking = isThinking,
+                    foldByDefault = foldThinkingByDefault
+                )
             }
 
             val shouldShowContentBubble = if (isUser) {
@@ -377,11 +382,15 @@ private fun ResponseActions(
 }
 
 @Composable
-private fun ThinkingBlock(content: String, isThinking: Boolean) {
-    var expanded by remember { mutableStateOf(true) }
+private fun ThinkingBlock(
+    content: String,
+    isThinking: Boolean,
+    foldByDefault: Boolean
+) {
+    var expanded by remember { mutableStateOf(isThinking || !foldByDefault) }
 
-    LaunchedEffect(isThinking) {
-        if (!isThinking) expanded = false
+    LaunchedEffect(isThinking, foldByDefault) {
+        expanded = isThinking || !foldByDefault
     }
 
     Column(modifier = Modifier.widthIn(max = 300.dp).padding(bottom = 4.dp)) {

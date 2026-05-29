@@ -499,6 +499,7 @@ fun ChatScreen(
                                     toolCalls = message.toolCalls,
                                     isThinking = message.isThinking,
                                     isStreaming = message.isStreaming,
+                                    foldThinkingByDefault = uiState.foldThinkingByDefault,
                                     canEditUserMessage = message.id == editableUserMessageId,
                                     onCopy = { copyResponseText(context, message.content) },
                                     onShare = { shareResponseText(context, message.content) },

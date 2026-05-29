@@ -3,6 +3,7 @@ package com.lmstudio.client.data.preferences
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
@@ -40,8 +41,10 @@ class AppPreferences(context: Context) {
         private val LOCAL_TOOL_ROUNDS_KEY = intPreferencesKey("local_tool_rounds")
         private val SEARCH_PROVIDER_KEY = stringPreferencesKey("search_provider")
         private val BRAVE_SEARCH_API_KEY_KEY = stringPreferencesKey("brave_search_api_key")
+        private val FOLD_THINKING_BY_DEFAULT_KEY = booleanPreferencesKey("fold_thinking_by_default")
         const val DEFAULT_BASE_URL = "http://10.0.2.2:1234"
         const val DEFAULT_LOCAL_TOOL_ROUNDS = 8
+        const val DEFAULT_FOLD_THINKING_BY_DEFAULT = true
         const val MIN_LOCAL_TOOL_ROUNDS = 1
         const val MAX_LOCAL_TOOL_ROUNDS = 20
     }
@@ -79,6 +82,10 @@ class AppPreferences(context: Context) {
         prefs[BRAVE_SEARCH_API_KEY_KEY] ?: ""
     }
 
+    val foldThinkingByDefault: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[FOLD_THINKING_BY_DEFAULT_KEY] ?: DEFAULT_FOLD_THINKING_BY_DEFAULT
+    }
+
     suspend fun saveBaseUrl(url: String) {
         dataStore.edit { prefs -> prefs[BASE_URL_KEY] = url }
     }
@@ -111,5 +118,9 @@ class AppPreferences(context: Context) {
 
     suspend fun saveBraveSearchApiKey(apiKey: String) {
         dataStore.edit { prefs -> prefs[BRAVE_SEARCH_API_KEY_KEY] = apiKey }
+    }
+
+    suspend fun saveFoldThinkingByDefault(fold: Boolean) {
+        dataStore.edit { prefs -> prefs[FOLD_THINKING_BY_DEFAULT_KEY] = fold }
     }
 }

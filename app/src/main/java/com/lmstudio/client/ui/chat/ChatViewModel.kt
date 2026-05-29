@@ -140,6 +140,7 @@ data class ChatUiState(
     val localToolRounds: Int = AppPreferences.DEFAULT_LOCAL_TOOL_ROUNDS,
     val searchProvider: SearchProvider = SearchProvider.DISABLED,
     val braveSearchApiKey: String = "",
+    val foldThinkingByDefault: Boolean = AppPreferences.DEFAULT_FOLD_THINKING_BY_DEFAULT,
     val chatSettings: ChatSettings = ChatSettings(),
     val error: String? = null,
     val notice: String? = null,
@@ -228,6 +229,11 @@ class ChatViewModel(
         viewModelScope.launch {
             preferences.braveSearchApiKey.collect { apiKey ->
                 _uiState.update { it.copy(braveSearchApiKey = apiKey) }
+            }
+        }
+        viewModelScope.launch {
+            preferences.foldThinkingByDefault.collect { foldThinking ->
+                _uiState.update { it.copy(foldThinkingByDefault = foldThinking) }
             }
         }
     }

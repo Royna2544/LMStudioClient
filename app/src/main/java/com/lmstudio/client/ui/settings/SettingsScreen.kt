@@ -158,6 +158,22 @@ fun SettingsScreen(
             Spacer(Modifier.height(16.dp))
 
             Text(
+                text = "Chat UI",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(Modifier.height(8.dp))
+            LocalToolToggleRow(
+                name = "Fold thinking by default",
+                description = "Completed thinking blocks start collapsed.",
+                checked = uiState.foldThinkingByDefault,
+                onCheckedChange = viewModel::updateFoldThinkingByDefault
+            )
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(16.dp))
+
+            Text(
                 text = "Local MCP Tools",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.primary
