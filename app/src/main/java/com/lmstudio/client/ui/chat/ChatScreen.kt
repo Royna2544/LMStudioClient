@@ -393,6 +393,7 @@ fun ChatScreen(
                             MessageBubble(
                                 content = message.content,
                                 isUser = message.role == "user",
+                                attachments = message.requestAttachments,
                                 thinkingContent = message.thinkingContent,
                                 errorMessage = message.errorMessage,
                                 tttlSeconds = message.tttlSeconds(),

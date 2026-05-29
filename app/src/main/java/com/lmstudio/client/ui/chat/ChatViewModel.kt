@@ -215,7 +215,7 @@ class ChatViewModel(
         val attachments = state.pendingAttachments
         if ((text.isEmpty() && attachments.isEmpty()) || state.isStreaming || state.selectedModel.isEmpty()) return
 
-        val userVisibleContent = buildVisibleUserMessage(text, attachments)
+        val userVisibleContent = buildVisibleUserMessage(text)
         val userMessage = UiMessage(
             role = "user",
             content = userVisibleContent,
@@ -559,20 +559,7 @@ private fun generateChatTitle(text: String, attachments: List<PendingAttachment>
 private fun String.limitTitle(): String =
     if (length <= 48) this else take(45).trimEnd() + "..."
 
-private fun buildVisibleUserMessage(text: String, attachments: List<PendingAttachment>): String = buildString {
-    if (text.isNotBlank()) append(text)
-    if (attachments.isNotEmpty()) {
-        if (isNotEmpty()) append("\n\n")
-        append("Attached:\n")
-        attachments.forEach { attachment ->
-            val label = when (attachment.type) {
-                PendingAttachmentType.IMAGE -> "Image"
-                PendingAttachmentType.TEXT -> "Text file"
-            }
-            append("- $label: ${attachment.name}\n")
-        }
-    }
-}.trimEnd()
+private fun buildVisibleUserMessage(text: String): String = text.trim()
 
 private fun buildNativeInput(
     text: String,

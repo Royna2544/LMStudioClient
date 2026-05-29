@@ -1,7 +1,10 @@
 package com.lmstudio.client.ui.components
 
+import android.graphics.BitmapFactory
+import android.util.Base64
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -34,13 +38,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lmstudio.client.ui.chat.PendingAttachment
+import com.lmstudio.client.ui.chat.PendingAttachmentType
 
 @Composable
 fun MessageBubble(
     content: String,
     isUser: Boolean,
+    attachments: List<PendingAttachment> = emptyList(),
     thinkingContent: String = "",
     errorMessage: String? = null,
     tttlSeconds: Double? = null,
@@ -65,7 +75,13 @@ fun MessageBubble(
                 ThinkingBlock(content = thinkingContent, isThinking = isThinking)
             }
 
-            if (content.isNotEmpty() || errorMessage != null || !isThinking) {
+            val shouldShowContentBubble = if (isUser) {
+                content.isNotBlank()
+            } else {
+                content.isNotEmpty() || errorMessage != null || !isThinking
+            }
+
+            if (shouldShowContentBubble) {
                 val hasError = errorMessage != null
                 Surface(
                     color = when {
@@ -100,6 +116,10 @@ fun MessageBubble(
                 }
             }
 
+            if (isUser && attachments.isNotEmpty()) {
+                AttachmentBlock(attachments = attachments)
+            }
+
             if (!isUser && !isStreaming) {
                 ResponseStats(
                     tttlSeconds = tttlSeconds,
@@ -114,6 +134,75 @@ fun MessageBubble(
             }
         }
     }
+}
+
+@Composable
+private fun AttachmentBlock(attachments: List<PendingAttachment>) {
+    Column(
+        modifier = Modifier
+            .widthIn(max = 300.dp)
+            .padding(top = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalAlignment = Alignment.End
+    ) {
+        attachments.forEach { attachment ->
+            Surface(
+                modifier = Modifier.widthIn(max = 260.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
+            ) {
+                Column(modifier = Modifier.padding(8.dp)) {
+                    Text(
+                        text = "Attached",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                    Spacer(Modifier.size(3.dp))
+                    Text(
+                        text = attachment.name,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (attachment.type == PendingAttachmentType.IMAGE) {
+                        AttachmentImagePreview(dataUrl = attachment.dataUrl)
+                    } else {
+                        Text(
+                            text = "Text document",
+                            modifier = Modifier.padding(top = 4.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AttachmentImagePreview(dataUrl: String?) {
+    val imageBitmap = remember(dataUrl) { dataUrl?.decodeDataUrlImage() }
+    imageBitmap?.let {
+        Image(
+            bitmap = it,
+            contentDescription = "Attached image preview",
+            modifier = Modifier
+                .padding(top = 8.dp)
+                .fillMaxWidth()
+                .heightIn(max = 180.dp)
+                .clip(RoundedCornerShape(8.dp)),
+            contentScale = ContentScale.Crop
+        )
+    }
+}
+
+private fun String.decodeDataUrlImage() = try {
+    val encoded = substringAfter(',', missingDelimiterValue = this)
+    val bytes = Base64.decode(encoded, Base64.DEFAULT)
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+} catch (_: Exception) {
+    null
 }
 
 @Composable
