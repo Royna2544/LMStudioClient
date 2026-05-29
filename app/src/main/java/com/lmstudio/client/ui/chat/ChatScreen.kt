@@ -101,6 +101,7 @@ fun ChatScreen(
     var showModelInfo by remember { mutableStateOf(false) }
     var showChatSettings by remember { mutableStateOf(false) }
     var showAttachmentMenu by remember { mutableStateOf(false) }
+    var followStreaming by remember { mutableStateOf(true) }
 
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -136,6 +137,7 @@ fun ChatScreen(
             uiState.messages.size
         }
     }
+    val bottomAnchorIndex = uiState.messages.size
     val streamingContentLength by remember {
         derivedStateOf {
             val last = uiState.messages.lastOrNull()
@@ -164,13 +166,22 @@ fun ChatScreen(
 
     LaunchedEffect(uiState.currentChatId, messageListSize) {
         if (uiState.messages.isNotEmpty()) {
-            listState.animateScrollToItem(uiState.messages.lastIndex)
+            followStreaming = true
+            listState.animateScrollToItem(bottomAnchorIndex)
+        }
+    }
+
+    LaunchedEffect(listState.isScrollInProgress, shouldFollowStreaming) {
+        if (listState.isScrollInProgress) {
+            followStreaming = shouldFollowStreaming
+        } else if (shouldFollowStreaming) {
+            followStreaming = true
         }
     }
 
     LaunchedEffect(streamingContentLength) {
-        if (uiState.messages.isNotEmpty() && shouldFollowStreaming && !listState.isScrollInProgress) {
-            listState.animateScrollToItem(uiState.messages.lastIndex)
+        if (uiState.messages.isNotEmpty() && followStreaming && !listState.isScrollInProgress) {
+            listState.scrollToItem(bottomAnchorIndex)
         }
     }
 
@@ -410,6 +421,9 @@ fun ChatScreen(
                                 onRetry = { viewModel.retryResponse(message.id) }
                             )
                         }
+                        item(key = CHAT_BOTTOM_ANCHOR_KEY) {
+                            Spacer(Modifier.height(1.dp))
+                        }
                     }
                 }
 
@@ -614,6 +628,8 @@ private fun android.content.ContentResolver.displayName(uri: Uri): String? {
     }
     return uri.lastPathSegment
 }
+
+private const val CHAT_BOTTOM_ANCHOR_KEY = "chat-bottom-anchor"
 
 @Composable
 private fun ChatHistoryDrawer(
