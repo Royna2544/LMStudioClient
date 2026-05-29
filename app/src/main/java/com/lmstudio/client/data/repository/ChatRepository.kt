@@ -1,6 +1,7 @@
 package com.lmstudio.client.data.repository
 
 import com.google.gson.Gson
+import com.google.gson.JsonParser
 import com.lmstudio.client.data.api.dto.ChatRequest
 import com.lmstudio.client.data.api.dto.ChatResponse
 import com.lmstudio.client.data.api.dto.ChatStreamEvent
@@ -96,7 +97,7 @@ class ChatRepository(
                             }
                         }
                         "error" -> {
-                            close(IOException(event.error?.message ?: "LM Studio stream error"))
+                            close(IOException(event.errorMessage() ?: "LM Studio stream error"))
                         }
                         "chat.end" -> {
                             event.result?.responseId?.let { responseId ->
@@ -115,7 +116,7 @@ class ChatRepository(
                 t: Throwable?,
                 response: Response?
             ) {
-                close(t ?: IOException("Stream failed: HTTP ${response?.code}"))
+                close(IOException(response?.errorMessage() ?: t?.message ?: "Stream failed"))
             }
 
             override fun onClosed(eventSource: EventSource) {
@@ -139,7 +140,7 @@ class ChatRepository(
 
             okHttpClient.newCall(httpRequest).execute().use { response ->
                 if (!response.isSuccessful) {
-                    throw IOException("Server returned ${response.code}")
+                    throw IOException(response.errorMessage() ?: "Server returned ${response.code}")
                 }
                 val body = response.body?.string() ?: throw IOException("Empty response body")
                 gson.fromJson(body, ChatResponse::class.java)
@@ -162,3 +163,28 @@ class ChatRepository(
 
 private fun Request.Builder.applyAuth(token: String): Request.Builder =
     if (token.isNotBlank()) header("Authorization", "Bearer $token") else this
+
+private fun ChatStreamEvent.errorMessage(): String? =
+    error?.message?.takeIf { it.isNotBlank() }
+
+private fun Response.errorMessage(): String? {
+    val bodyText = body?.string() ?: return codeMessage()
+    return extractErrorMessage(bodyText) ?: codeMessage()
+}
+
+private fun Response.codeMessage(): String = "Server returned $code"
+
+private fun extractErrorMessage(bodyText: String): String? = try {
+    val root = JsonParser.parseString(bodyText)
+    if (!root.isJsonObject) return null
+    val error = root.asJsonObject.get("error")
+    val message = when {
+        error == null || error.isJsonNull -> null
+        error.isJsonPrimitive -> error.asString
+        error.isJsonObject -> error.asJsonObject.get("message")?.asString
+        else -> null
+    }
+    message?.takeIf { it.isNotBlank() }
+} catch (_: Exception) {
+    null
+}

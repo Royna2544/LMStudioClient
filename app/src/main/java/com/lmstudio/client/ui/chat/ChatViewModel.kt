@@ -387,7 +387,7 @@ class ChatViewModel(
                 }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                val message = "No response from LM Studio: ${e.message ?: "server error"}"
+                val message = e.message ?: "LM Studio did not return a response."
                 _uiState.update { current ->
                     val msgs = current.messages.toMutableList()
                     val last = msgs.lastIndex

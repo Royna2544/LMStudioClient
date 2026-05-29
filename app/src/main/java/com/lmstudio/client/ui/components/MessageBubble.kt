@@ -122,7 +122,7 @@ private fun ResponseStats(
     generationSeconds: Double?
 ) {
     val stats = buildList {
-        tttlSeconds?.let { add("TTTL %.1fs".format(it)) }
+        tttlSeconds?.let { add("First Tok %.1fs".format(it)) }
         generationSeconds?.let { add("Generated %.1fs".format(it)) }
     }
     if (stats.isEmpty()) return
