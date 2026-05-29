@@ -1,6 +1,10 @@
 package com.lmstudio.client.ui.navigation
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -29,24 +33,30 @@ fun NavGraph(
         factory = ChatViewModel.Factory(appContext, chatRepository, preferences)
     )
 
-    NavHost(navController = navController, startDestination = ROUTE_CHAT) {
-        composable(ROUTE_CHAT) {
-            ChatScreen(
-                viewModel = chatViewModel,
-                onNavigateToSettings = { navController.navigate(ROUTE_SETTINGS) }
-            )
-        }
-        composable(ROUTE_SETTINGS) {
-            val settingsViewModel: SettingsViewModel = viewModel(
-                factory = SettingsViewModel.Factory(preferences)
-            )
-            SettingsScreen(
-                viewModel = settingsViewModel,
-                onNavigateBack = {
-                    navController.popBackStack()
-                    chatViewModel.loadModels() // Reload model list after URL may have changed
-                }
-            )
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+    ) {
+        NavHost(navController = navController, startDestination = ROUTE_CHAT) {
+            composable(ROUTE_CHAT) {
+                ChatScreen(
+                    viewModel = chatViewModel,
+                    onNavigateToSettings = { navController.navigate(ROUTE_SETTINGS) }
+                )
+            }
+            composable(ROUTE_SETTINGS) {
+                val settingsViewModel: SettingsViewModel = viewModel(
+                    factory = SettingsViewModel.Factory(preferences)
+                )
+                SettingsScreen(
+                    viewModel = settingsViewModel,
+                    onNavigateBack = {
+                        navController.popBackStack()
+                        chatViewModel.loadModels() // Reload model list after URL may have changed
+                    }
+                )
+            }
         }
     }
 }
