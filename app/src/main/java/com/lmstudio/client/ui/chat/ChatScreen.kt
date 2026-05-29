@@ -84,7 +84,6 @@ import androidx.compose.ui.unit.dp
 import com.lmstudio.client.data.api.dto.briefContextLength
 import com.lmstudio.client.ui.components.MessageBubble
 import kotlinx.coroutines.launch
-import kotlin.math.max
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -152,12 +151,10 @@ fun ChatScreen(
         derivedStateOf {
             val layoutInfo = listState.layoutInfo
             val visibleItems = layoutInfo.visibleItemsInfo
-            val lastVisibleIndex = visibleItems.lastOrNull()?.index ?: return@derivedStateOf true
-            val lastItemIndex = max(0, layoutInfo.totalItemsCount - 1)
-            val lastVisibleItem = visibleItems.lastOrNull()
+            val bottomAnchor = visibleItems.firstOrNull { it.index == bottomAnchorIndex }
+                ?: return@derivedStateOf false
             val viewportBottom = layoutInfo.viewportEndOffset
-            val lastItemBottom = lastVisibleItem?.let { it.offset + it.size } ?: 0
-            lastVisibleIndex >= lastItemIndex - 1 && lastItemBottom <= viewportBottom + 96
+            bottomAnchor.offset + bottomAnchor.size <= viewportBottom + 8
         }
     }
     val editableUserMessageId = remember(uiState.messages, uiState.isStreaming) {
