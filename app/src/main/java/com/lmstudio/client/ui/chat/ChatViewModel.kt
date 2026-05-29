@@ -23,6 +23,7 @@ import com.lmstudio.client.data.api.dto.StreamToken
 import com.lmstudio.client.data.preferences.AppPreferences
 import com.lmstudio.client.data.preferences.SearchProvider
 import com.lmstudio.client.data.repository.ChatRepository
+import com.lmstudio.client.data.search.toWebSearchProviderClient
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -73,10 +74,6 @@ val LOCAL_TOOL_INFOS = listOf(
     ToolInfo("system.network", "Return current network connectivity, transport type, and metered status."),
     ToolInfo("system.thermal", "Return Android thermal status when supported."),
     ToolInfo("system.app", "Return this app's package name, version, and build code.")
-)
-
-private val WEB_TOOL_INFOS = listOf(
-    ToolInfo("web.search", "Search the web for current information using the configured search provider.")
 )
 
 data class UiMessage(
@@ -1161,40 +1158,29 @@ private fun buildWebTools(
     searchProvider: SearchProvider,
     braveSearchApiKey: String,
     repository: ChatRepository
-): List<ToolDefinition> =
-    when {
-        searchProvider == SearchProvider.BRAVE && braveSearchApiKey.isNotBlank() -> listOf(
-            ToolDefinition(
-                info = webToolInfo("web.search"),
-                parameters = """{"query":"string","max_results":"optional integer 1-10","freshness":"optional any|day|week|month|year","site":"optional domain"}"""
-            ) { arguments ->
-                val query = arguments["query"].orEmpty()
-                val maxResults = arguments["max_results"]?.toIntOrNull()?.coerceIn(1, 10) ?: 5
-                val freshness = arguments["freshness"]
-                    ?.trim()
-                    ?.lowercase()
-                    ?.takeIf { it.isNotBlank() && it != "any" }
-                val site = arguments["site"]?.takeIf { it.isNotBlank() }
-                repository.braveWebSearch(
-                    apiKey = braveSearchApiKey,
-                    query = query,
-                    maxResults = maxResults,
-                    freshness = freshness,
-                    site = site
-                ).fold(
+): List<ToolDefinition> {
+    val providerClient = searchProvider.toWebSearchProviderClient(
+        braveSearchApiKey = braveSearchApiKey,
+        repository = repository
+    )
+    if (!providerClient.isRequirementsMet()) return emptyList()
+
+    return listOf(
+        ToolDefinition(
+            info = ToolInfo(providerClient.toolName, providerClient.toolDescription),
+            parameters = providerClient.parameters,
+            execute = { arguments ->
+                providerClient.search(arguments).fold(
                     onSuccess = { ToolExecutionResult(it) },
                     onFailure = { ToolExecutionResult(it.message ?: "Web search failed.", succeeded = false) }
                 )
             }
         )
-        else -> emptyList()
-    }
+    )
+}
 
 private fun toolInfo(name: String): ToolInfo =
     LOCAL_TOOL_INFOS.first { it.name == name }
-
-private fun webToolInfo(name: String): ToolInfo =
-    WEB_TOOL_INFOS.first { it.name == name }
 
 private fun buildToolPrompt(tools: List<ToolDefinition>): String = buildString {
     appendLine("Tools are available. To call one or more tools, respond only with one or more blocks:")
