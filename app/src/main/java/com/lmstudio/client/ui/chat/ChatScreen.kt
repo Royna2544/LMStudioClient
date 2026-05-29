@@ -96,6 +96,7 @@ import androidx.compose.ui.unit.dp
 import com.lmstudio.client.data.api.dto.briefContextLength
 import com.lmstudio.client.ui.components.MessageBubble
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlin.math.absoluteValue
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -209,6 +210,13 @@ fun ChatScreen(
             hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
         }
         hadActiveGeneration = uiState.isStreaming
+    }
+
+    LaunchedEffect(uiState.notice) {
+        if (uiState.notice != null) {
+            delay(2_500)
+            viewModel.dismissNotice()
+        }
     }
 
     ModalNavigationDrawer(
@@ -384,6 +392,36 @@ fun ChatScreen(
                     .padding(paddingValues)
             ) {
                 // Error banner
+                uiState.notice?.let { notice ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color(0xFFFFF3CD)
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = notice,
+                                color = Color(0xFF5F4300),
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            IconButton(onClick = { viewModel.dismissNotice() }) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Dismiss",
+                                    tint = Color(0xFF5F4300)
+                                )
+                            }
+                        }
+                    }
+                }
+
                 uiState.error?.let { error ->
                     Card(
                         modifier = Modifier

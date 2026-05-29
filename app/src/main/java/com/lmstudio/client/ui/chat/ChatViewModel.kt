@@ -142,6 +142,7 @@ data class ChatUiState(
     val braveSearchApiKey: String = "",
     val chatSettings: ChatSettings = ChatSettings(),
     val error: String? = null,
+    val notice: String? = null,
     val isLoadingModels: Boolean = false,
     val remoteResponseId: String? = null,
     val isTemporaryChat: Boolean = false,
@@ -729,6 +730,10 @@ class ChatViewModel(
         _uiState.update { it.copy(error = null) }
     }
 
+    fun dismissNotice() {
+        _uiState.update { it.copy(notice = null) }
+    }
+
     fun reportAttachmentError(message: String) {
         _uiState.update { it.copy(error = message) }
     }
@@ -875,6 +880,7 @@ class ChatViewModel(
         if (streamingJob?.isActive == true) {
             userCancelRequested = true
             streamingJob?.cancel()
+            _uiState.update { it.copy(notice = GENERATION_CANCELED_NOTICE) }
         }
     }
 
@@ -907,6 +913,7 @@ class ChatViewModel(
 private const val DEFAULT_CHAT_TITLE = "New chat"
 private const val TEMPORARY_CHAT_TITLE = "Temporary chat"
 private const val USER_CANCELED_GENERATION_MESSAGE = "User canceled generation"
+private const val GENERATION_CANCELED_NOTICE = "Canceled existing generation"
 const val MIN_TEMPERATURE = 0f
 const val MAX_TEMPERATURE = 1f
 const val DEFAULT_TEMPERATURE = 0.7f
