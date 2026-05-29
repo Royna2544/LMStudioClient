@@ -50,6 +50,7 @@ data class UiMessage(
     val role: String,
     val content: String = "",
     val thinkingContent: String = "",
+    val toolCalls: List<UiToolCall> = emptyList(),
     val errorMessage: String? = null,
     val requestText: String? = null,
     val requestAttachments: List<PendingAttachment> = emptyList(),
@@ -58,6 +59,14 @@ data class UiMessage(
     val responseCompletedAtMillis: Long? = null,
     val isThinking: Boolean = false,
     val isStreaming: Boolean = false
+)
+
+data class UiToolCall(
+    val index: Int,
+    val name: String,
+    val output: String,
+    val durationMillis: Long,
+    val succeeded: Boolean
 )
 
 data class ChatSession(
@@ -494,29 +503,40 @@ class ChatViewModel(
                 }
 
                 if (pendingToolCall != null) {
-                    val toolResult = executeLocalTool(pendingToolCall)
-                    val toolPrompt = buildLocalToolResultPrompt(toolResult)
+                    val toolIndex = nextToolCallIndex(_uiState.value.messages)
+                    val toolLine = buildToolThinkingLine(toolIndex, pendingToolCall.name)
                     _uiState.update { current ->
                         val msgs = current.messages.toMutableList()
                         val last = msgs.lastIndex
-                        if (last >= 0 && msgs[last].isStreaming) {
-                            msgs[last] = UiMessage(
-                                id = msgs[last].id,
-                                role = "tool",
-                                content = TOOL_STATUS_MESSAGE.format(pendingToolCall.name),
-                                responseStartedAtMillis = msgs[last].responseStartedAtMillis,
-                                firstTokenAtMillis = msgs[last].firstTokenAtMillis,
-                                responseCompletedAtMillis = System.currentTimeMillis()
-                            )
+                        val previousThinking = if (last >= 0 && msgs[last].isStreaming) {
+                            val previousAssistant = msgs.removeAt(last)
+                            previousAssistant.thinkingContent + flushed.thinking
+                        } else {
+                            flushed.thinking
                         }
+                        val thinkingContent = previousThinking.withToolThinkingLine(toolLine)
+                        val now = System.currentTimeMillis()
                         val assistantPlaceholder = UiMessage(
                             role = "assistant",
-                            responseStartedAtMillis = System.currentTimeMillis(),
+                            thinkingContent = thinkingContent,
+                            responseStartedAtMillis = now,
                             isThinking = true,
                             isStreaming = true
                         )
                         current.withCurrentSession(messages = msgs + assistantPlaceholder)
                             .copy(isStreaming = true)
+                    }
+                    val toolResult = executeLocalTool(toolIndex, pendingToolCall)
+                    val uiToolCall = toolResult.toUiToolCall()
+                    val toolPrompt = buildLocalToolResultPrompt(toolResult)
+                    _uiState.update { current ->
+                        val msgs = current.messages.toMutableList()
+                        val last = msgs.lastIndex
+                        if (last >= 0 && msgs[last].isStreaming) {
+                            val msg = msgs[last]
+                            msgs[last] = msg.copy(toolCalls = msg.toolCalls + uiToolCall)
+                        }
+                        current.withCurrentSession(messages = msgs).copy(isStreaming = true)
                     }
                     persistChatHistory()
                     startResponseStream(
@@ -855,9 +875,12 @@ private fun ChatSession.sanitizeForHistory(): ChatSession? {
 
 private fun UiMessage.sanitizeForHistory(): UiMessage? {
     val safeRole = runCatching { role }.getOrNull()
-        ?.takeIf { it == "user" || it == "assistant" || it == "tool" }
+        ?.takeIf { it == "user" || it == "assistant" }
         ?: return null
     val safeAttachments = runCatching { requestAttachments }.getOrNull()
+        ?.mapNotNull { it.sanitizeForHistory() }
+        .orEmpty()
+    val safeToolCalls = runCatching { toolCalls }.getOrNull()
         ?.mapNotNull { it.sanitizeForHistory() }
         .orEmpty()
 
@@ -866,11 +889,24 @@ private fun UiMessage.sanitizeForHistory(): UiMessage? {
         role = safeRole,
         content = runCatching { content }.getOrNull().orEmpty(),
         thinkingContent = runCatching { thinkingContent }.getOrNull().orEmpty(),
+        toolCalls = safeToolCalls,
         errorMessage = runCatching { errorMessage }.getOrNull(),
         requestText = runCatching { requestText }.getOrNull(),
         requestAttachments = safeAttachments,
         isThinking = false,
         isStreaming = false
+    )
+}
+
+private fun UiToolCall.sanitizeForHistory(): UiToolCall? {
+    val safeIndex = runCatching { index }.getOrNull()?.takeIf { it > 0 } ?: return null
+    val safeName = runCatching { name }.getOrNull()?.takeIf { it.isNotBlank() } ?: return null
+    return copy(
+        index = safeIndex,
+        name = safeName,
+        output = runCatching { output }.getOrNull().orEmpty(),
+        durationMillis = runCatching { durationMillis }.getOrNull()?.coerceAtLeast(0L) ?: 0L,
+        succeeded = runCatching { succeeded }.getOrDefault(false)
     )
 }
 
@@ -982,9 +1018,11 @@ private data class LocalToolCall(
 )
 
 private data class LocalToolResult(
+    val index: Int,
     val call: LocalToolCall,
     val output: String,
-    val succeeded: Boolean
+    val succeeded: Boolean,
+    val durationMillis: Long
 )
 
 private val LOCAL_TOOLS = listOf(
@@ -1049,25 +1087,32 @@ private fun String.substringBetweenToolCallTags(): String? {
     return substring(contentStart, closeStart).trim().takeIf { it.isNotBlank() }
 }
 
-private fun executeLocalTool(call: LocalToolCall): LocalToolResult {
+private fun executeLocalTool(index: Int, call: LocalToolCall): LocalToolResult {
+    val startedAtMillis = System.currentTimeMillis()
     val tool = LOCAL_TOOLS.firstOrNull { it.name == call.name }
         ?: return LocalToolResult(
+            index = index,
             call = call,
             output = "Unknown local tool: ${call.name}",
-            succeeded = false
+            succeeded = false,
+            durationMillis = System.currentTimeMillis() - startedAtMillis
         )
 
     return try {
         LocalToolResult(
+            index = index,
             call = call,
             output = tool.execute(call.arguments),
-            succeeded = true
+            succeeded = true,
+            durationMillis = System.currentTimeMillis() - startedAtMillis
         )
     } catch (e: Exception) {
         LocalToolResult(
+            index = index,
             call = call,
             output = e.message ?: "Local tool failed.",
-            succeeded = false
+            succeeded = false,
+            durationMillis = System.currentTimeMillis() - startedAtMillis
         )
     }
 }
@@ -1076,11 +1121,36 @@ private fun buildLocalToolResultPrompt(result: LocalToolResult): String = buildS
     appendLine("Local tool result")
     appendLine("tool: ${result.call.name}")
     appendLine("status: ${if (result.succeeded) "success" else "failure"}")
+    appendLine("duration_ms: ${result.durationMillis}")
     appendLine("output:")
     appendLine(result.output)
     appendLine()
     append("Use this result to answer the user's previous request. Do not call another local tool unless a new tool result is needed.")
 }
+
+private fun LocalToolResult.toUiToolCall(): UiToolCall =
+    UiToolCall(
+        index = index,
+        name = call.name,
+        output = output,
+        durationMillis = durationMillis,
+        succeeded = succeeded
+    )
+
+private fun nextToolCallIndex(messages: List<UiMessage>): Int =
+    messages.sumOf { message ->
+        runCatching { message.toolCalls.size }.getOrDefault(0)
+    } + 1
+
+private fun buildToolThinkingLine(index: Int, name: String): String =
+    "Tool called #$index: $name"
+
+private fun String.withToolThinkingLine(toolLine: String): String =
+    if (isBlank()) {
+        toolLine
+    } else {
+        trimEnd() + "\n\n" + toolLine
+    }
 
 private data class ThinkTagState(
     val inThink: Boolean = false,
@@ -1164,6 +1234,5 @@ private fun String.tagPrefixSuffixLength(tag: String): Int {
 
 private const val THINK_OPEN_TAG = "<think>"
 private const val THINK_CLOSE_TAG = "</think>"
-private const val TOOL_STATUS_MESSAGE = "model is calling a tool request... `%s`"
 private const val TOOL_CALL_OPEN_TAG = "<tool_call>"
 private const val TOOL_CALL_CLOSE_TAG = "</tool_call>"

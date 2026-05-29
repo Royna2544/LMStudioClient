@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lmstudio.client.ui.chat.PendingAttachment
 import com.lmstudio.client.ui.chat.PendingAttachmentType
+import com.lmstudio.client.ui.chat.UiToolCall
 
 @Composable
 fun MessageBubble(
@@ -56,6 +57,7 @@ fun MessageBubble(
     errorMessage: String? = null,
     tttlSeconds: Double? = null,
     generationSeconds: Double? = null,
+    toolCalls: List<UiToolCall> = emptyList(),
     isThinking: Boolean = false,
     isStreaming: Boolean = false,
     canEditUserMessage: Boolean = false,
@@ -140,6 +142,9 @@ fun MessageBubble(
                     tttlSeconds = tttlSeconds,
                     generationSeconds = generationSeconds
                 )
+                if (toolCalls.isNotEmpty() && errorMessage == null) {
+                    ToolCallDetails(toolCalls = toolCalls)
+                }
                 ResponseActions(
                     canCopyOrShare = content.isNotBlank(),
                     onCopy = onCopy,
@@ -266,6 +271,75 @@ private fun ResponseStats(
         color = MaterialTheme.colorScheme.outline
     )
 }
+
+@Composable
+private fun ToolCallDetails(toolCalls: List<UiToolCall>) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Column(modifier = Modifier.widthIn(max = 300.dp).padding(top = 5.dp)) {
+        Row(
+            modifier = Modifier
+                .clickable { expanded = !expanded }
+                .padding(vertical = 4.dp, horizontal = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = if (expanded) "Collapse tool details" else "Expand tool details",
+                modifier = Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.outline
+            )
+            Spacer(Modifier.width(4.dp))
+            Text(
+                text = if (toolCalls.size == 1) "Tool call" else "Tool calls (${toolCalls.size})",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline
+            )
+        }
+
+        AnimatedVisibility(visible = expanded) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                toolCalls.forEach { toolCall ->
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Column(modifier = Modifier.padding(8.dp)) {
+                            Text(
+                                text = "Tool #${toolCall.index}: ${toolCall.name}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "${if (toolCall.succeeded) "Success" else "Failed"} · ${toolCall.durationLabel()}",
+                                modifier = Modifier.padding(top = 2.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                            if (toolCall.output.isNotBlank()) {
+                                MarkdownText(
+                                    content = toolCall.output,
+                                    modifier = Modifier.padding(top = 6.dp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun UiToolCall.durationLabel(): String =
+    if (durationMillis >= 1000) {
+        "%.1fs".format(durationMillis / 1000.0)
+    } else {
+        "${durationMillis}ms"
+    }
 
 @Composable
 private fun ResponseActions(
