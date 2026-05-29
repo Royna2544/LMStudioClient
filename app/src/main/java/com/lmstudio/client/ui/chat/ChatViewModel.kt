@@ -73,7 +73,11 @@ val LOCAL_TOOL_INFOS = listOf(
     ToolInfo("system.display", "Return display resolution, density, orientation, and font scale."),
     ToolInfo("system.network", "Return current network connectivity, transport type, and metered status."),
     ToolInfo("system.thermal", "Return Android thermal status when supported."),
-    ToolInfo("system.app", "Return this app's package name, version, and build code.")
+    ToolInfo("system.app", "Return this app's package name, version, and build code."),
+    ToolInfo("memory.list", "List saved user memory entries from app-private JSON storage."),
+    ToolInfo("memory.add", "Save an explicit durable user preference or fact to app-private memory."),
+    ToolInfo("memory.edit", "Update an existing saved memory entry by id."),
+    ToolInfo("memory.delete", "Delete an existing saved memory entry by id.")
 )
 
 data class UiMessage(
@@ -485,7 +489,7 @@ class ChatViewModel(
         val previousResponseId = if (useRemoteContinuation) remoteResponseId else null
         userCancelRequested = false
         val activeLocalTools = if (allowLocalTools && remainingLocalToolRounds > 0) {
-            buildLocalTools(applicationContext).filter { it.info.name in enabledLocalTools } +
+            buildLocalTools(applicationContext, preferences).filter { it.info.name in enabledLocalTools } +
                 buildWebTools(searchProvider, braveSearchApiKey, repository)
         } else {
             emptyList()
@@ -920,10 +924,14 @@ private const val DEFAULT_CHAT_TITLE = "New chat"
 private const val TEMPORARY_CHAT_TITLE = "Temporary chat"
 private const val USER_CANCELED_GENERATION_MESSAGE = "User canceled generation"
 private const val GENERATION_CANCELED_NOTICE = "Canceled existing generation"
+private const val MAX_MEMORY_ENTRIES = 200
+private const val MAX_MEMORY_TEXT_LENGTH = 1000
 const val MIN_TEMPERATURE = 0f
 const val MAX_TEMPERATURE = 1f
 const val DEFAULT_TEMPERATURE = 0.7f
 private val CHAT_SESSION_LIST_TYPE = object : TypeToken<List<ChatSession>>() {}.type
+private val MEMORY_ENTRY_LIST_TYPE = object : TypeToken<List<MemoryEntry>>() {}.type
+private val memoryGson = Gson()
 
 private fun Float.toApiDecimal(scale: Int): Double =
     BigDecimal.valueOf(toDouble())
@@ -1170,6 +1178,13 @@ private data class ToolExecutionResult(
     val succeeded: Boolean = true
 )
 
+private data class MemoryEntry(
+    val id: String = "",
+    val text: String = "",
+    val createdAt: Long = 0L,
+    val updatedAt: Long = 0L
+)
+
 private data class LocalToolCall(
     val name: String,
     val arguments: Map<String, String>
@@ -1183,7 +1198,7 @@ private data class ToolCallResult(
     val durationMillis: Long
 )
 
-private fun buildLocalTools(context: Context): List<ToolDefinition> {
+private fun buildLocalTools(context: Context, preferences: AppPreferences): List<ToolDefinition> {
     val appContext = context.applicationContext
     return listOf(
         ToolDefinition(toolInfo("current_time.time")) {
@@ -1215,9 +1230,117 @@ private fun buildLocalTools(context: Context): List<ToolDefinition> {
         },
         ToolDefinition(toolInfo("system.app")) {
             ToolExecutionResult(appInfo(appContext))
+        },
+        ToolDefinition(toolInfo("memory.list")) {
+            ToolExecutionResult(memoryListOutput(readMemoryEntries(preferences)))
+        },
+        ToolDefinition(
+            info = toolInfo("memory.add"),
+            parameters = "{\"text\":\"explicit durable preference or fact to remember\"}"
+        ) { arguments ->
+            addMemoryEntry(preferences, arguments)
+        },
+        ToolDefinition(
+            info = toolInfo("memory.edit"),
+            parameters = "{\"id\":\"memory id\",\"text\":\"replacement memory text\"}"
+        ) { arguments ->
+            editMemoryEntry(preferences, arguments)
+        },
+        ToolDefinition(
+            info = toolInfo("memory.delete"),
+            parameters = "{\"id\":\"memory id\"}"
+        ) { arguments ->
+            deleteMemoryEntry(preferences, arguments)
         }
     )
 }
+
+private suspend fun readMemoryEntries(preferences: AppPreferences): List<MemoryEntry> {
+    val rawJson = preferences.memoryJson.first()
+    val parsed = runCatching {
+        memoryGson.fromJson<List<MemoryEntry>>(rawJson, MEMORY_ENTRY_LIST_TYPE)
+    }.getOrNull().orEmpty()
+    return parsed.mapNotNull { entry -> entry.normalizedOrNull() }
+}
+
+private suspend fun writeMemoryEntries(preferences: AppPreferences, entries: List<MemoryEntry>) {
+    preferences.saveMemoryJson(memoryGson.toJson(entries.takeLast(MAX_MEMORY_ENTRIES)))
+}
+
+private suspend fun addMemoryEntry(
+    preferences: AppPreferences,
+    arguments: Map<String, String>
+): ToolExecutionResult {
+    val text = arguments["text"].toMemoryTextOrNull()
+        ?: return ToolExecutionResult("memory.add requires a non-empty text argument.", succeeded = false)
+    val now = System.currentTimeMillis()
+    val entry = MemoryEntry(
+        id = UUID.randomUUID().toString(),
+        text = text,
+        createdAt = now,
+        updatedAt = now
+    )
+    writeMemoryEntries(preferences, readMemoryEntries(preferences) + entry)
+    return ToolExecutionResult("Saved memory:\n${memoryGson.toJson(entry)}")
+}
+
+private suspend fun editMemoryEntry(
+    preferences: AppPreferences,
+    arguments: Map<String, String>
+): ToolExecutionResult {
+    val id = arguments["id"]?.trim()?.takeIf { it.isNotBlank() }
+        ?: return ToolExecutionResult("memory.edit requires a non-empty id argument.", succeeded = false)
+    val text = arguments["text"].toMemoryTextOrNull()
+        ?: return ToolExecutionResult("memory.edit requires a non-empty text argument.", succeeded = false)
+    val entries = readMemoryEntries(preferences)
+    val existing = entries.firstOrNull { it.id == id }
+        ?: return ToolExecutionResult("No saved memory found with id: $id", succeeded = false)
+    val updatedEntry = existing.copy(text = text, updatedAt = System.currentTimeMillis())
+    writeMemoryEntries(
+        preferences = preferences,
+        entries = entries.map { entry -> if (entry.id == id) updatedEntry else entry }
+    )
+    return ToolExecutionResult("Updated memory:\n${memoryGson.toJson(updatedEntry)}")
+}
+
+private suspend fun deleteMemoryEntry(
+    preferences: AppPreferences,
+    arguments: Map<String, String>
+): ToolExecutionResult {
+    val id = arguments["id"]?.trim()?.takeIf { it.isNotBlank() }
+        ?: return ToolExecutionResult("memory.delete requires a non-empty id argument.", succeeded = false)
+    val entries = readMemoryEntries(preferences)
+    val removed = entries.firstOrNull { it.id == id }
+        ?: return ToolExecutionResult("No saved memory found with id: $id", succeeded = false)
+    writeMemoryEntries(
+        preferences = preferences,
+        entries = entries.filterNot { entry -> entry.id == id }
+    )
+    return ToolExecutionResult("Deleted memory:\n${memoryGson.toJson(removed)}")
+}
+
+private fun memoryListOutput(entries: List<MemoryEntry>): String =
+    memoryGson.toJson(mapOf("memories" to entries))
+
+private fun MemoryEntry.normalizedOrNull(): MemoryEntry? {
+    val safeText = runCatching { text.trim() }.getOrNull()
+        ?.takeIf { it.isNotBlank() }
+        ?.take(MAX_MEMORY_TEXT_LENGTH)
+        ?: return null
+    val now = System.currentTimeMillis()
+    val safeCreatedAt = runCatching { createdAt }.getOrDefault(0L).takeIf { it > 0L } ?: now
+    val safeUpdatedAt = runCatching { updatedAt }.getOrDefault(0L).takeIf { it > 0L } ?: safeCreatedAt
+    return MemoryEntry(
+        id = runCatching { id.trim() }.getOrNull()?.takeIf { it.isNotBlank() }
+            ?: UUID.randomUUID().toString(),
+        text = safeText,
+        createdAt = safeCreatedAt,
+        updatedAt = safeUpdatedAt
+    )
+}
+
+private fun String?.toMemoryTextOrNull(): String? =
+    this?.trim()?.takeIf { it.isNotBlank() }?.take(MAX_MEMORY_TEXT_LENGTH)
 
 private fun buildWebTools(
     searchProvider: SearchProvider,
@@ -1251,6 +1374,13 @@ private fun buildToolPrompt(tools: List<ToolDefinition>): String = buildString {
     appendLine("Tools are available. To call one or more tools, respond only with one or more blocks:")
     appendLine("<tool_call>{\"name\":\"tool.name\",\"arguments\":{}}</tool_call>")
     appendLine("Do not add prose around tool calls. After tool results are provided, answer normally.")
+    if (tools.any { it.info.name.startsWith("memory.") }) {
+        appendLine("Memory rules:")
+        appendLine("- When the user explicitly states a durable preference or fact about themself, call memory.add before answering.")
+        appendLine("- When the user explicitly changes a saved preference or fact, call memory.list, then memory.edit with the matching id.")
+        appendLine("- When the user explicitly asks you to forget or remove saved information, call memory.list, then memory.delete with the matching id.")
+        appendLine("- Call memory.list before relying on user preferences or saved personal facts. Do not save guesses or temporary details.")
+    }
     appendLine("Available tools:")
     tools.forEach { tool ->
         appendLine("- ${tool.info.name}: ${tool.info.description} Parameters JSON schema: ${tool.parameters}")

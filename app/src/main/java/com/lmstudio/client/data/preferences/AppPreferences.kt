@@ -37,6 +37,7 @@ class AppPreferences(context: Context) {
         private val SELECTED_MODEL_KEY = stringPreferencesKey("selected_model")
         private val BEARER_TOKEN_KEY = stringPreferencesKey("bearer_token")
         private val CHAT_HISTORY_KEY = stringPreferencesKey("chat_history")
+        private val MEMORY_JSON_KEY = stringPreferencesKey("memory_json")
         private val DISABLED_LOCAL_TOOLS_KEY = stringSetPreferencesKey("disabled_local_tools")
         private val LOCAL_TOOL_ROUNDS_KEY = intPreferencesKey("local_tool_rounds")
         private val SEARCH_PROVIDER_KEY = stringPreferencesKey("search_provider")
@@ -63,6 +64,10 @@ class AppPreferences(context: Context) {
 
     val chatHistoryJson: Flow<String> = dataStore.data.map { prefs ->
         prefs[CHAT_HISTORY_KEY] ?: ""
+    }
+
+    val memoryJson: Flow<String> = dataStore.data.map { prefs ->
+        prefs[MEMORY_JSON_KEY] ?: "[]"
     }
 
     val disabledLocalToolNames: Flow<Set<String>> = dataStore.data.map { prefs ->
@@ -100,6 +105,10 @@ class AppPreferences(context: Context) {
 
     suspend fun saveChatHistoryJson(json: String) {
         dataStore.edit { prefs -> prefs[CHAT_HISTORY_KEY] = json }
+    }
+
+    suspend fun saveMemoryJson(json: String) {
+        dataStore.edit { prefs -> prefs[MEMORY_JSON_KEY] = json }
     }
 
     suspend fun saveDisabledLocalToolNames(names: Set<String>) {
