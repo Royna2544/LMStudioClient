@@ -84,6 +84,7 @@ import androidx.compose.ui.unit.dp
 import com.lmstudio.client.data.api.dto.briefContextLength
 import com.lmstudio.client.ui.components.MessageBubble
 import kotlinx.coroutines.launch
+import kotlin.math.max
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -130,20 +131,43 @@ fun ChatScreen(
         uiState.availableModels.find { it.id == uiState.selectedModel }
     }
 
-    // Auto-scroll to bottom when messages are added or the last message grows (streaming)
-    val scrollTrigger by remember {
+    val messageListSize by remember {
         derivedStateOf {
-            val last = uiState.messages.lastOrNull()
-            Triple(
-                uiState.currentChatId,
-                uiState.messages.size,
-                (last?.content?.length ?: 0) + (last?.thinkingContent?.length ?: 0)
-            )
+            uiState.messages.size
         }
     }
-    LaunchedEffect(scrollTrigger) {
+    val streamingContentLength by remember {
+        derivedStateOf {
+            val last = uiState.messages.lastOrNull()
+            if (last?.isStreaming == true) {
+                last.content.length + last.thinkingContent.length
+            } else {
+                0
+            }
+        }
+    }
+    val shouldFollowStreaming by remember {
+        derivedStateOf {
+            val layoutInfo = listState.layoutInfo
+            val visibleItems = layoutInfo.visibleItemsInfo
+            val lastVisibleIndex = visibleItems.lastOrNull()?.index ?: return@derivedStateOf true
+            val lastItemIndex = max(0, layoutInfo.totalItemsCount - 1)
+            val lastVisibleItem = visibleItems.lastOrNull()
+            val viewportBottom = layoutInfo.viewportEndOffset
+            val lastItemBottom = lastVisibleItem?.let { it.offset + it.size } ?: 0
+            lastVisibleIndex >= lastItemIndex - 1 && lastItemBottom <= viewportBottom + 96
+        }
+    }
+
+    LaunchedEffect(uiState.currentChatId, messageListSize) {
         if (uiState.messages.isNotEmpty()) {
-            listState.scrollToItem(uiState.messages.lastIndex)
+            listState.animateScrollToItem(uiState.messages.lastIndex)
+        }
+    }
+
+    LaunchedEffect(streamingContentLength) {
+        if (uiState.messages.isNotEmpty() && shouldFollowStreaming && !listState.isScrollInProgress) {
+            listState.animateScrollToItem(uiState.messages.lastIndex)
         }
     }
 
