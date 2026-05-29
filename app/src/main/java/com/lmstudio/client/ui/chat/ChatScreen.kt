@@ -634,6 +634,7 @@ fun ChatScreen(
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val showPersistentHistory = maxWidth >= HISTORY_PANE_BREAKPOINT
+        val availableWidth = maxWidth
 
         LaunchedEffect(showPersistentHistory) {
             if (showPersistentHistory && drawerState.isOpen) {
@@ -644,10 +645,10 @@ fun ChatScreen(
         if (showPersistentHistory) {
             val minHistoryWidthPx = with(density) { HISTORY_PANE_MIN_WIDTH.toPx() }
             val maxHistoryWidthPx = with(density) {
-                minOf(HISTORY_PANE_MAX_WIDTH.toPx(), maxWidth.toPx() * 0.48f)
+                minOf(HISTORY_PANE_MAX_WIDTH.toPx(), availableWidth.toPx() * 0.48f)
             }
             val maxHistoryWidthValue = maxHistoryWidthPx / density.density
-            val defaultHistoryWidthValue = (maxWidth.value * HISTORY_PANE_DEFAULT_RATIO)
+            val defaultHistoryWidthValue = (availableWidth.value * HISTORY_PANE_DEFAULT_RATIO)
                 .coerceIn(HISTORY_PANE_MIN_WIDTH_VALUE, maxHistoryWidthValue)
             val historyPaneWidthValue = (historyPaneWidthOverride ?: defaultHistoryWidthValue)
                 .coerceIn(HISTORY_PANE_MIN_WIDTH_VALUE, maxHistoryWidthValue)
@@ -672,7 +673,7 @@ fun ChatScreen(
                         .width(HISTORY_SPLITTER_WIDTH)
                         .fillMaxSize()
                         .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
-                        .pointerInput(maxWidth) {
+                        .pointerInput(availableWidth) {
                             detectHorizontalDragGestures { change, dragAmount ->
                                 change.consume()
                                 val currentPx = with(density) { historyPaneWidthValue.dp.toPx() }
