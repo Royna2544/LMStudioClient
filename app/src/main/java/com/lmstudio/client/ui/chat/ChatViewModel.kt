@@ -21,6 +21,7 @@ import com.lmstudio.client.data.api.dto.ChatRequest
 import com.lmstudio.client.data.api.dto.ModelData
 import com.lmstudio.client.data.api.dto.StreamToken
 import com.lmstudio.client.data.preferences.AppPreferences
+import com.lmstudio.client.data.preferences.SearchProvider
 import com.lmstudio.client.data.repository.ChatRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -72,6 +73,10 @@ val LOCAL_TOOL_INFOS = listOf(
     ToolInfo("system.network", "Return current network connectivity, transport type, and metered status."),
     ToolInfo("system.thermal", "Return Android thermal status when supported."),
     ToolInfo("system.app", "Return this app's package name, version, and build code.")
+)
+
+private val WEB_TOOL_INFOS = listOf(
+    ToolInfo("web.search", "Search the web for current information using the configured search provider.")
 )
 
 data class UiMessage(
@@ -135,6 +140,8 @@ data class ChatUiState(
     val bearerToken: String = "",
     val enabledLocalTools: Set<String> = LOCAL_TOOL_INFOS.map { it.name }.toSet(),
     val localToolRounds: Int = AppPreferences.DEFAULT_LOCAL_TOOL_ROUNDS,
+    val searchProvider: SearchProvider = SearchProvider.DISABLED,
+    val braveSearchApiKey: String = "",
     val chatSettings: ChatSettings = ChatSettings(),
     val error: String? = null,
     val isLoadingModels: Boolean = false,
@@ -211,6 +218,16 @@ class ChatViewModel(
         viewModelScope.launch {
             preferences.localToolRounds.collect { rounds ->
                 _uiState.update { it.copy(localToolRounds = rounds) }
+            }
+        }
+        viewModelScope.launch {
+            preferences.searchProvider.collect { provider ->
+                _uiState.update { it.copy(searchProvider = provider) }
+            }
+        }
+        viewModelScope.launch {
+            preferences.braveSearchApiKey.collect { apiKey ->
+                _uiState.update { it.copy(braveSearchApiKey = apiKey) }
             }
         }
     }
@@ -346,6 +363,8 @@ class ChatViewModel(
             history = history,
             useRemoteContinuation = requestSettings.saveRemoteHistory,
             enabledLocalTools = state.enabledLocalTools,
+            searchProvider = state.searchProvider,
+            braveSearchApiKey = state.braveSearchApiKey,
             remainingLocalToolRounds = state.localToolRounds,
             allowLocalTools = true
         )
@@ -399,6 +418,8 @@ class ChatViewModel(
             history = history,
             useRemoteContinuation = false,
             enabledLocalTools = state.enabledLocalTools,
+            searchProvider = state.searchProvider,
+            braveSearchApiKey = state.braveSearchApiKey,
             remainingLocalToolRounds = state.localToolRounds,
             allowLocalTools = true
         )
@@ -451,12 +472,15 @@ class ChatViewModel(
         history: List<UiMessage>,
         useRemoteContinuation: Boolean,
         enabledLocalTools: Set<String>,
+        searchProvider: SearchProvider,
+        braveSearchApiKey: String,
         remainingLocalToolRounds: Int,
         allowLocalTools: Boolean
     ) {
         val previousResponseId = if (useRemoteContinuation) remoteResponseId else null
         val activeLocalTools = if (allowLocalTools && remainingLocalToolRounds > 0) {
-            buildLocalTools(applicationContext).filter { it.info.name in enabledLocalTools }
+            buildLocalTools(applicationContext).filter { it.info.name in enabledLocalTools } +
+                buildWebTools(searchProvider, braveSearchApiKey, repository)
         } else {
             emptyList()
         }
@@ -613,6 +637,8 @@ class ChatViewModel(
                         history = _uiState.value.messages,
                         useRemoteContinuation = false,
                         enabledLocalTools = _uiState.value.enabledLocalTools,
+                        searchProvider = _uiState.value.searchProvider,
+                        braveSearchApiKey = _uiState.value.braveSearchApiKey,
                         remainingLocalToolRounds = remainingLocalToolRounds - 1,
                         allowLocalTools = true
                     )
@@ -1131,11 +1157,47 @@ private fun buildLocalTools(context: Context): List<ToolDefinition> {
     )
 }
 
+private fun buildWebTools(
+    searchProvider: SearchProvider,
+    braveSearchApiKey: String,
+    repository: ChatRepository
+): List<ToolDefinition> =
+    when {
+        searchProvider == SearchProvider.BRAVE && braveSearchApiKey.isNotBlank() -> listOf(
+            ToolDefinition(
+                info = webToolInfo("web.search"),
+                parameters = """{"query":"string","max_results":"optional integer 1-10","freshness":"optional any|day|week|month|year","site":"optional domain"}"""
+            ) { arguments ->
+                val query = arguments["query"].orEmpty()
+                val maxResults = arguments["max_results"]?.toIntOrNull()?.coerceIn(1, 10) ?: 5
+                val freshness = arguments["freshness"]
+                    ?.trim()
+                    ?.lowercase()
+                    ?.takeIf { it.isNotBlank() && it != "any" }
+                val site = arguments["site"]?.takeIf { it.isNotBlank() }
+                repository.braveWebSearch(
+                    apiKey = braveSearchApiKey,
+                    query = query,
+                    maxResults = maxResults,
+                    freshness = freshness,
+                    site = site
+                ).fold(
+                    onSuccess = { ToolExecutionResult(it) },
+                    onFailure = { ToolExecutionResult(it.message ?: "Web search failed.", succeeded = false) }
+                )
+            }
+        )
+        else -> emptyList()
+    }
+
 private fun toolInfo(name: String): ToolInfo =
     LOCAL_TOOL_INFOS.first { it.name == name }
 
+private fun webToolInfo(name: String): ToolInfo =
+    WEB_TOOL_INFOS.first { it.name == name }
+
 private fun buildToolPrompt(tools: List<ToolDefinition>): String = buildString {
-    appendLine("Local tools are available. To call one or more tools, respond only with one or more blocks:")
+    appendLine("Tools are available. To call one or more tools, respond only with one or more blocks:")
     appendLine("<tool_call>{\"name\":\"tool.name\",\"arguments\":{}}</tool_call>")
     appendLine("Do not add prose around tool calls. After tool results are provided, answer normally.")
     appendLine("Available tools:")
@@ -1384,7 +1446,7 @@ private suspend fun executeTool(
         ?: return ToolCallResult(
             index = index,
             call = call,
-            output = "Local tool is not enabled or does not exist: ${call.name}",
+            output = "Tool is not enabled or does not exist: ${call.name}",
             succeeded = false,
             durationMillis = System.currentTimeMillis() - startedAtMillis
         )
@@ -1402,7 +1464,7 @@ private suspend fun executeTool(
         ToolCallResult(
             index = index,
             call = call,
-            output = e.message ?: "Local tool failed.",
+            output = e.message ?: "Tool failed.",
             succeeded = false,
             durationMillis = System.currentTimeMillis() - startedAtMillis
         )
@@ -1410,7 +1472,7 @@ private suspend fun executeTool(
 }
 
 private fun buildLocalToolResultPrompt(results: List<ToolCallResult>): String = buildString {
-    appendLine("Local tool results")
+    appendLine("Tool results")
     results.forEach { result ->
         appendLine()
         appendLine("tool_call_index: ${result.index}")

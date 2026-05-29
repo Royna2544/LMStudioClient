@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -52,6 +53,59 @@ class ChatRepository(
                     .filter { it.type != "embedding" }
                     .map { it.toModelData() }
             )
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun braveWebSearch(
+        apiKey: String,
+        query: String,
+        maxResults: Int,
+        freshness: String?,
+        site: String?
+    ): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            if (apiKey.isBlank()) {
+                return@withContext Result.failure(Exception("Brave Search API key is missing."))
+            }
+            val normalizedQuery = query.trim()
+            if (normalizedQuery.isBlank()) {
+                return@withContext Result.failure(Exception("Search query is required."))
+            }
+
+            val scopedQuery = site
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { "site:$it $normalizedQuery" }
+                ?: normalizedQuery
+            val urlBuilder = "https://api.search.brave.com/res/v1/web/search"
+                .toHttpUrl()
+                .newBuilder()
+                .addQueryParameter("q", scopedQuery)
+                .addQueryParameter("count", maxResults.coerceIn(1, 10).toString())
+                .addQueryParameter("text_decorations", "false")
+                .addQueryParameter("spellcheck", "true")
+
+            freshness?.toBraveFreshness()?.let { urlBuilder.addQueryParameter("freshness", it) }
+
+            val request = Request.Builder()
+                .url(urlBuilder.build())
+                .get()
+                .header("Accept", "application/json")
+                .header("X-Subscription-Token", apiKey)
+                .build()
+
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(
+                        IOException(response.errorMessage() ?: "Brave Search returned ${response.code}")
+                    )
+                }
+                val body = response.body?.string()
+                    ?: return@withContext Result.failure(Exception("Brave Search returned an empty response."))
+                Result.success(formatBraveSearchResults(body, normalizedQuery))
+            }
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -196,3 +250,53 @@ private fun extractErrorMessage(bodyText: String): String? {
         return null
     }
 }
+
+private fun String.toBraveFreshness(): String? =
+    when (trim().lowercase()) {
+        "day", "d", "pd" -> "pd"
+        "week", "w", "pw" -> "pw"
+        "month", "m", "pm" -> "pm"
+        "year", "y", "py" -> "py"
+        else -> null
+    }
+
+private fun formatBraveSearchResults(bodyText: String, query: String): String {
+    val root = JsonParser.parseString(bodyText)
+    if (!root.isJsonObject) return "query: $query\nresults: none"
+
+    val web = root.asJsonObject.get("web")?.takeIf { it.isJsonObject }?.asJsonObject
+    val results = web?.get("results")
+        ?.takeIf { it.isJsonArray }
+        ?.asJsonArray
+        ?.filter { it.isJsonObject }
+        .orEmpty()
+    if (results.isEmpty()) return "query: $query\nresults: none"
+
+    return buildString {
+        appendLine("query: $query")
+        appendLine("results:")
+        results.forEachIndexed { index, element ->
+            val result = element.asJsonObject
+            val title = result.stringOrBlank("title").ifBlank { "Untitled" }
+            val url = result.stringOrBlank("url")
+            val description = result.stringOrBlank("description")
+            val age = result.stringOrBlank("age")
+            val published = result.stringOrBlank("page_age")
+
+            appendLine("${index + 1}. $title")
+            if (url.isNotBlank()) appendLine("url: $url")
+            if (description.isNotBlank()) appendLine("snippet: $description")
+            when {
+                published.isNotBlank() -> appendLine("published: $published")
+                age.isNotBlank() -> appendLine("age: $age")
+            }
+            if (index != results.lastIndex) appendLine()
+        }
+    }.trim()
+}
+
+private fun com.google.gson.JsonObject.stringOrBlank(name: String): String =
+    get(name)
+        ?.takeIf { it.isJsonPrimitive }
+        ?.asString
+        .orEmpty()
