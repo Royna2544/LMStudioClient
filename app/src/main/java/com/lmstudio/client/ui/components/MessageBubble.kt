@@ -15,13 +15,17 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -38,8 +42,12 @@ fun MessageBubble(
     content: String,
     isUser: Boolean,
     thinkingContent: String = "",
+    errorMessage: String? = null,
     isThinking: Boolean = false,
-    isStreaming: Boolean = false
+    isStreaming: Boolean = false,
+    onCopy: () -> Unit = {},
+    onShare: () -> Unit = {},
+    onRetry: () -> Unit = {}
 ) {
     Row(
         modifier = Modifier
@@ -55,10 +63,14 @@ fun MessageBubble(
                 ThinkingBlock(content = thinkingContent, isThinking = isThinking)
             }
 
-            if (content.isNotEmpty() || !isThinking) {
+            if (content.isNotEmpty() || errorMessage != null || !isThinking) {
+                val hasError = errorMessage != null
                 Surface(
-                    color = if (isUser) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.surfaceVariant,
+                    color = when {
+                        isUser -> MaterialTheme.colorScheme.primary
+                        hasError -> MaterialTheme.colorScheme.errorContainer
+                        else -> MaterialTheme.colorScheme.surfaceVariant
+                    },
                     shape = RoundedCornerShape(
                         topStart = 16.dp,
                         topEnd = 16.dp,
@@ -76,14 +88,53 @@ fun MessageBubble(
                         } else {
                             val displayText = if (isStreaming && !isThinking) "$content▊" else content
                             MarkdownText(
-                                content = displayText,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                content = errorMessage ?: displayText,
+                                color = if (hasError) MaterialTheme.colorScheme.onErrorContainer
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 15.sp
                             )
                         }
                     }
                 }
             }
+
+            if (!isUser && !isStreaming) {
+                ResponseActions(
+                    canCopyOrShare = content.isNotBlank(),
+                    onCopy = onCopy,
+                    onShare = onShare,
+                    onRetry = onRetry
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResponseActions(
+    canCopyOrShare: Boolean,
+    onCopy: () -> Unit,
+    onShare: () -> Unit,
+    onRetry: () -> Unit
+) {
+    Row(
+        modifier = Modifier.padding(top = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        TextButton(enabled = canCopyOrShare, onClick = onCopy) {
+            Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(4.dp))
+            Text("Copy", style = MaterialTheme.typography.labelSmall)
+        }
+        TextButton(enabled = canCopyOrShare, onClick = onShare) {
+            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(4.dp))
+            Text("Share", style = MaterialTheme.typography.labelSmall)
+        }
+        TextButton(onClick = onRetry) {
+            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(4.dp))
+            Text("Retry", style = MaterialTheme.typography.labelSmall)
         }
     }
 }

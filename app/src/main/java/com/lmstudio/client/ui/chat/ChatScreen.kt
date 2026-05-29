@@ -1,6 +1,9 @@
 package com.lmstudio.client.ui.chat
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Base64
@@ -367,8 +370,12 @@ fun ChatScreen(
                                 content = message.content,
                                 isUser = message.role == "user",
                                 thinkingContent = message.thinkingContent,
+                                errorMessage = message.errorMessage,
                                 isThinking = message.isThinking,
-                                isStreaming = message.isStreaming
+                                isStreaming = message.isStreaming,
+                                onCopy = { copyResponseText(context, message.content) },
+                                onShare = { shareResponseText(context, message.content) },
+                                onRetry = { viewModel.retryResponse(message.id) }
                             )
                         }
                     }
@@ -501,6 +508,19 @@ fun ChatScreen(
             onDismiss = { showChatSettings = false }
         )
     }
+}
+
+private fun copyResponseText(context: Context, text: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    clipboard.setPrimaryClip(ClipData.newPlainText("LM Studio response", text))
+}
+
+private fun shareResponseText(context: Context, text: String) {
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, text)
+    }
+    context.startActivity(Intent.createChooser(intent, "Share response"))
 }
 
 private fun attachImageFromUri(

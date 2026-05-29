@@ -44,6 +44,9 @@ data class UiMessage(
     val role: String,
     val content: String = "",
     val thinkingContent: String = "",
+    val errorMessage: String? = null,
+    val requestText: String? = null,
+    val requestAttachments: List<PendingAttachment> = emptyList(),
     val isThinking: Boolean = false,
     val isStreaming: Boolean = false
 )
@@ -209,8 +212,13 @@ class ChatViewModel(
         if ((text.isEmpty() && attachments.isEmpty()) || state.isStreaming || state.selectedModel.isEmpty()) return
 
         val userVisibleContent = buildVisibleUserMessage(text, attachments)
-        val userMessage = UiMessage(role = "user", content = userVisibleContent)
-        val assistantPlaceholder = UiMessage(role = "assistant", content = "", isStreaming = true)
+        val userMessage = UiMessage(
+            role = "user",
+            content = userVisibleContent,
+            requestText = text,
+            requestAttachments = attachments
+        )
+        val assistantPlaceholder = UiMessage(role = "assistant", isStreaming = true)
         val history = state.messages + userMessage
         val generatedTitle = if (state.messages.none { it.role == "user" }) {
             generateChatTitle(text, attachments)
@@ -231,17 +239,84 @@ class ChatViewModel(
             )
         }
 
-        val settings = state.chatSettings
-        val previousResponseId = if (settings.saveRemoteHistory) state.remoteResponseId else null
+        startResponseStream(
+            baseUrl = state.baseUrl,
+            bearerToken = state.bearerToken,
+            selectedModel = state.selectedModel,
+            settings = state.chatSettings,
+            remoteResponseId = state.remoteResponseId,
+            text = text,
+            attachments = attachments,
+            history = history,
+            useRemoteContinuation = state.chatSettings.saveRemoteHistory
+        )
+    }
+
+    fun retryResponse(assistantMessageId: String) {
+        val state = _uiState.value
+        if (state.isStreaming || state.selectedModel.isEmpty()) return
+
+        val assistantIndex = state.messages.indexOfFirst {
+            it.id == assistantMessageId && it.role == "assistant"
+        }
+        if (assistantIndex <= 0) return
+
+        val userIndex = state.messages
+            .take(assistantIndex)
+            .indexOfLast { it.role == "user" }
+        if (userIndex < 0) return
+
+        val userMessage = state.messages[userIndex]
+        val retryText = userMessage.requestText ?: userMessage.content
+        val retryAttachments = userMessage.requestAttachments
+        val history = state.messages.take(assistantIndex)
+        val assistantPlaceholder = UiMessage(role = "assistant", isStreaming = true)
+
+        _uiState.update { current ->
+            current.copy(
+                messages = history + assistantPlaceholder,
+                isStreaming = true,
+                error = null
+            ).withCurrentSession(
+                messages = history + assistantPlaceholder,
+                remoteResponseId = null
+            )
+        }
+
+        startResponseStream(
+            baseUrl = state.baseUrl,
+            bearerToken = state.bearerToken,
+            selectedModel = state.selectedModel,
+            settings = state.chatSettings,
+            remoteResponseId = null,
+            text = retryText,
+            attachments = retryAttachments,
+            history = history,
+            useRemoteContinuation = false
+        )
+    }
+
+    private fun startResponseStream(
+        baseUrl: String,
+        bearerToken: String,
+        selectedModel: String,
+        settings: ChatSettings,
+        remoteResponseId: String?,
+        text: String,
+        attachments: List<PendingAttachment>,
+        history: List<UiMessage>,
+        useRemoteContinuation: Boolean
+    ) {
+        val previousResponseId = if (useRemoteContinuation) remoteResponseId else null
         val input = buildNativeInput(
             text = text,
             attachments = attachments,
             history = history,
-            useRemoteContinuation = settings.saveRemoteHistory && previousResponseId != null
+            useRemoteContinuation = useRemoteContinuation && previousResponseId != null
         )
 
         val request = ChatRequest(
-            model = state.selectedModel,
+            model = selectedModel,
             input = input,
             stream = settings.stream,
             systemPrompt = settings.systemPrompt.takeIf { it.isNotBlank() },
@@ -257,8 +332,9 @@ class ChatViewModel(
 
         streamingJob = viewModelScope.launch {
             var thinkTagState = ThinkTagState()
+            var receivedResponseContent = false
             try {
-                repository.streamChat(state.baseUrl, request, state.bearerToken).collect { token ->
+                repository.streamChat(baseUrl, request, bearerToken).collect { token ->
                     if (token.responseId != null) {
                         _uiState.update { it.withCurrentSession(remoteResponseId = token.responseId) }
                         return@collect
@@ -267,6 +343,9 @@ class ChatViewModel(
                         ParsedContent(content = "", thinking = token.text, state = thinkTagState)
                     } else {
                         parseContentToken(token.text, thinkTagState).also { thinkTagState = it.state }
+                    }
+                    if (parsed.content.isNotEmpty() || parsed.thinking.isNotEmpty()) {
+                        receivedResponseContent = true
                     }
                     val isThinkingNow = token.isThinking || parsed.state.inThink
                     _uiState.update { current ->
@@ -277,6 +356,7 @@ class ChatViewModel(
                             msgs[last] = msg.copy(
                                 content = msg.content + parsed.content,
                                 thinkingContent = msg.thinkingContent + parsed.thinking,
+                                errorMessage = null,
                                 isThinking = isThinkingNow
                             )
                         }
@@ -285,7 +365,19 @@ class ChatViewModel(
                 }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                _uiState.update { it.copy(error = "Stream error: ${e.message}") }
+                val message = "No response from LM Studio: ${e.message ?: "server error"}"
+                _uiState.update { current ->
+                    val msgs = current.messages.toMutableList()
+                    val last = msgs.lastIndex
+                    if (last >= 0 && msgs[last].role == "assistant" && msgs[last].isStreaming) {
+                        msgs[last] = msgs[last].copy(
+                            errorMessage = message,
+                            isStreaming = false,
+                            isThinking = false
+                        )
+                    }
+                    current.withCurrentSession(messages = msgs).copy(error = message)
+                }
             } finally {
                 val flushed = thinkTagState.flush()
                 _uiState.update { current ->
@@ -293,9 +385,13 @@ class ChatViewModel(
                     val last = msgs.lastIndex
                     if (last >= 0 && msgs[last].isStreaming) {
                         val msg = msgs[last]
+                        val hasFlushedContent = flushed.content.isNotEmpty() || flushed.thinking.isNotEmpty()
                         msgs[last] = msg.copy(
                             content = msg.content + flushed.content,
                             thinkingContent = msg.thinkingContent + flushed.thinking,
+                            errorMessage = if (!receivedResponseContent && !hasFlushedContent)
+                                msg.errorMessage ?: "LM Studio did not return a response."
+                            else msg.errorMessage,
                             isStreaming = false,
                             isThinking = false
                         )
