@@ -1010,8 +1010,7 @@ private fun buildLocalToolPrompt(): String = buildString {
 }
 
 private fun parseLocalToolCall(content: String): LocalToolCall? {
-    val match = TOOL_CALL_REGEX.find(content) ?: return null
-    val rawJson = match.groupValues[1].trim()
+    val rawJson = content.substringBetweenToolCallTags() ?: return null
     return try {
         val root = JsonParser.parseString(rawJson)
         if (!root.isJsonObject) return null
@@ -1037,6 +1036,17 @@ private fun parseLocalToolCall(content: String): LocalToolCall? {
     } catch (_: Exception) {
         null
     }
+}
+
+private fun String.substringBetweenToolCallTags(): String? {
+    val openStart = indexOf(TOOL_CALL_OPEN_TAG, ignoreCase = true)
+    if (openStart < 0) return null
+
+    val contentStart = openStart + TOOL_CALL_OPEN_TAG.length
+    val closeStart = indexOf(TOOL_CALL_CLOSE_TAG, startIndex = contentStart, ignoreCase = true)
+    if (closeStart < 0) return null
+
+    return substring(contentStart, closeStart).trim().takeIf { it.isNotBlank() }
 }
 
 private fun executeLocalTool(call: LocalToolCall): LocalToolResult {
@@ -1155,7 +1165,5 @@ private fun String.tagPrefixSuffixLength(tag: String): Int {
 private const val THINK_OPEN_TAG = "<think>"
 private const val THINK_CLOSE_TAG = "</think>"
 private const val TOOL_STATUS_MESSAGE = "model is calling a tool request... `%s`"
-private val TOOL_CALL_REGEX = Regex(
-    pattern = "<tool_call>\\s*(\\{[\\s\\S]*})\\s*</tool_call>",
-    options = setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
-)
+private const val TOOL_CALL_OPEN_TAG = "<tool_call>"
+private const val TOOL_CALL_CLOSE_TAG = "</tool_call>"
