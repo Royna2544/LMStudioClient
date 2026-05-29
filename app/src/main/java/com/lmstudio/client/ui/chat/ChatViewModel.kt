@@ -785,6 +785,7 @@ class ChatViewModel(
 
     fun discardTemporaryChat() {
         if (!_uiState.value.isTemporaryChat) return
+        userCancelRequested = true
         streamingJob?.cancel()
         _uiState.update { current ->
             if (!current.isTemporaryChat) return@update current
