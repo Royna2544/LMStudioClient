@@ -144,7 +144,7 @@ fun MessageBubble(
                 AttachmentBlock(attachments = attachments)
             }
 
-            if (timestampLabel.isNotBlank()) {
+            if (isUser && timestampLabel.isNotBlank()) {
                 Text(
                     text = timestampLabel,
                     modifier = Modifier.padding(top = 3.dp, start = 2.dp, end = 2.dp),
@@ -164,7 +164,8 @@ fun MessageBubble(
                 if (!isCanceled) {
                     ResponseStats(
                         tttlSeconds = tttlSeconds,
-                        generationSeconds = generationSeconds
+                        generationSeconds = generationSeconds,
+                        timestampLabel = timestampLabel
                     )
                 }
                 if (toolCalls.isNotEmpty() && errorMessage == null) {
@@ -281,11 +282,13 @@ private fun String.decodeDataUrlImage() = try {
 @Composable
 private fun ResponseStats(
     tttlSeconds: Double?,
-    generationSeconds: Double?
+    generationSeconds: Double?,
+    timestampLabel: String
 ) {
     val stats = listOfNotNull(
         tttlSeconds?.let { stringResource(R.string.first_tok_stat, it) },
-        generationSeconds?.let { stringResource(R.string.generated_stat, it) }
+        generationSeconds?.let { stringResource(R.string.generated_stat, it) },
+        timestampLabel.takeIf { it.isNotBlank() }
     )
     if (stats.isEmpty()) return
 
