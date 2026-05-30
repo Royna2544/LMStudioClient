@@ -35,6 +35,8 @@
     <string name="message_placeholder">메시지…</string>
     <string name="stop_generation_cd">생성 중지</string>
     <string name="send_cd">전송</string>
+    <string name="scroll_to_top_cd">맨 위로 스크롤</string>
+    <string name="scroll_to_bottom_cd">맨 아래로 스크롤</string>
     <string name="new_chat_cd">새 채팅</string>
     <string name="clipboard_response_label">LM Studio 응답</string>
     <string name="share_response">응답 공유</string>

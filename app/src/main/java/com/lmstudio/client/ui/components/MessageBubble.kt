@@ -60,6 +60,7 @@ fun MessageBubble(
     isCanceled: Boolean = false,
     tttlSeconds: Double? = null,
     generationSeconds: Double? = null,
+    timestampLabel: String = "",
     toolCalls: List<UiToolCall> = emptyList(),
     isThinking: Boolean = false,
     isModelLoading: Boolean = false,
@@ -141,6 +142,15 @@ fun MessageBubble(
 
             if (isUser && attachments.isNotEmpty()) {
                 AttachmentBlock(attachments = attachments)
+            }
+
+            if (timestampLabel.isNotBlank()) {
+                Text(
+                    text = timestampLabel,
+                    modifier = Modifier.padding(top = 3.dp, start = 2.dp, end = 2.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
             }
 
             if (isUser) {

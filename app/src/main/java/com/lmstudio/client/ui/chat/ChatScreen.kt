@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -47,6 +48,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.PushPin
@@ -88,6 +91,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -108,6 +112,13 @@ import com.lmstudio.client.data.api.dto.briefContextLength
 import com.lmstudio.client.ui.components.MessageBubble
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
+import java.util.Locale
 import kotlin.math.absoluteValue
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -132,8 +143,13 @@ fun ChatScreen(
     var userPausedStreamingFollow by remember { mutableStateOf(false) }
     var hadActiveGeneration by remember { mutableStateOf(false) }
     var lastAutoScrolledChatId by rememberSaveable { mutableStateOf<String?>(null) }
+    var scrollButtonDirection by remember { mutableStateOf<ScrollButtonDirection?>(null) }
     var showNotificationPermissionDialog by remember { mutableStateOf(false) }
     var pendingGenerationRequest by remember { mutableStateOf<PendingGenerationRequest?>(null) }
+    val timeFormatter = remember { DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault()) }
+    val dateFormatter = remember {
+        DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(Locale.getDefault())
+    }
 
     fun runGenerationRequest(request: PendingGenerationRequest) {
         when (request) {
@@ -267,6 +283,23 @@ fun ChatScreen(
         if (uiState.notice != null) {
             delay(2_500)
             viewModel.dismissNotice()
+        }
+    }
+
+    LaunchedEffect(listState) {
+        var previousPosition = 0
+        snapshotFlow {
+            listState.firstVisibleItemIndex * SCROLL_POSITION_MULTIPLIER +
+                listState.firstVisibleItemScrollOffset
+        }.collect { position ->
+            if (listState.isScrollInProgress && listState.layoutInfo.totalItemsCount > 0) {
+                scrollButtonDirection = when {
+                    position > previousPosition -> ScrollButtonDirection.Bottom
+                    position < previousPosition -> ScrollButtonDirection.Top
+                    else -> scrollButtonDirection
+                }
+            }
+            previousPosition = position
         }
     }
 
@@ -512,78 +545,128 @@ fun ChatScreen(
                 }
 
                 // Messages
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .weight(1f)
-                        .pointerInput(uiState.isStreaming) {
-                            awaitEachGesture {
-                                awaitFirstDown(requireUnconsumed = false)
-                                if (uiState.isStreaming) {
-                                    userPausedStreamingFollow = true
-                                    followStreaming = false
+                Box(modifier = Modifier.weight(1f)) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pointerInput(uiState.isStreaming) {
+                                awaitEachGesture {
+                                    awaitFirstDown(requireUnconsumed = false)
+                                    if (uiState.isStreaming) {
+                                        userPausedStreamingFollow = true
+                                        followStreaming = false
+                                    }
                                 }
-                            }
-                        },
-                    contentPadding = PaddingValues(vertical = 8.dp)
-                ) {
-                    if (uiState.messages.isEmpty()) {
-                        item {
-                            Box(
-                                modifier = Modifier
-                                    .fillParentMaxSize()
-                                    .padding(32.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(
-                                        stringResource(R.string.app_name),
-                                        style = MaterialTheme.typography.headlineSmall,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                    Spacer(Modifier.height(8.dp))
-                                    Text(
-                                        if (uiState.selectedModel.isEmpty())
-                                            stringResource(R.string.select_model_hint)
-                                        else
-                                            stringResource(R.string.start_chat_hint),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.outline
-                                    )
-                                }
-                            }
-                        }
-                    } else {
-                        items(uiState.messages, key = { it.id }) { message ->
-                            if (message.role != "tool") {
-                                MessageBubble(
-                                    content = message.content,
-                                    isUser = message.role == "user",
-                                    attachments = message.requestAttachments,
-                                    thinkingContent = message.thinkingContent,
-                                    errorMessage = message.errorMessage,
-                                    isCanceled = message.isCanceled,
-                                    tttlSeconds = message.tttlSeconds(),
-                                    generationSeconds = message.generationSeconds(),
-                                    toolCalls = message.toolCalls,
-                                    isThinking = message.isThinking,
-                                    isModelLoading = message.isModelLoading,
-                                    isStreaming = message.isStreaming,
-                                    foldThinkingByDefault = uiState.foldThinkingByDefault,
-                                    canEditUserMessage = message.id == editableUserMessageId,
-                                    onCopy = { copyResponseText(context, message.content) },
-                                    onShare = { shareResponseText(context, message.content) },
-                                    onEdit = { viewModel.editUserMessage(message.id) },
-                                    onRetry = {
-                                        startGenerationWithNotificationGate(
-                                            PendingGenerationRequest.Retry(message.id)
+                            },
+                        contentPadding = PaddingValues(vertical = 8.dp)
+                    ) {
+                        if (uiState.messages.isEmpty()) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillParentMaxSize()
+                                        .padding(32.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(
+                                            stringResource(R.string.app_name),
+                                            style = MaterialTheme.typography.headlineSmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Spacer(Modifier.height(8.dp))
+                                        Text(
+                                            if (uiState.selectedModel.isEmpty())
+                                                stringResource(R.string.select_model_hint)
+                                            else
+                                                stringResource(R.string.start_chat_hint),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.outline
                                         )
                                     }
-                                )
+                                }
+                            }
+                        } else {
+                            itemsIndexed(
+                                items = uiState.messages,
+                                key = { _, message -> message.id }
+                            ) { index, message ->
+                                if (message.role != "tool") {
+                                    val currentDate = message.createdAtMillis.messageDate()
+                                    val previousDate = uiState.messages
+                                        .take(index)
+                                        .lastOrNull { it.role != "tool" }
+                                        ?.createdAtMillis
+                                        ?.messageDate()
+                                    if (currentDate != previousDate) {
+                                        DateDivider(label = currentDate.format(dateFormatter))
+                                    }
+                                    MessageBubble(
+                                        content = message.content,
+                                        isUser = message.role == "user",
+                                        attachments = message.requestAttachments,
+                                        thinkingContent = message.thinkingContent,
+                                        errorMessage = message.errorMessage,
+                                        isCanceled = message.isCanceled,
+                                        tttlSeconds = message.tttlSeconds(),
+                                        generationSeconds = message.generationSeconds(),
+                                        timestampLabel = message.createdAtMillis.messageTime(timeFormatter),
+                                        toolCalls = message.toolCalls,
+                                        isThinking = message.isThinking,
+                                        isModelLoading = message.isModelLoading,
+                                        isStreaming = message.isStreaming,
+                                        foldThinkingByDefault = uiState.foldThinkingByDefault,
+                                        canEditUserMessage = message.id == editableUserMessageId,
+                                        onCopy = { copyResponseText(context, message.content) },
+                                        onShare = { shareResponseText(context, message.content) },
+                                        onEdit = { viewModel.editUserMessage(message.id) },
+                                        onRetry = {
+                                            startGenerationWithNotificationGate(
+                                                PendingGenerationRequest.Retry(message.id)
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+                            item(key = CHAT_BOTTOM_ANCHOR_KEY) {
+                                Spacer(Modifier.height(1.dp))
                             }
                         }
-                        item(key = CHAT_BOTTOM_ANCHOR_KEY) {
-                            Spacer(Modifier.height(1.dp))
+                    }
+
+                    val showScrollToTop = scrollButtonDirection == ScrollButtonDirection.Top &&
+                        listState.canScrollBackward
+                    val showScrollToBottom = scrollButtonDirection == ScrollButtonDirection.Bottom &&
+                        listState.canScrollForward
+                    if (showScrollToTop) {
+                        FilledIconButton(
+                            onClick = {
+                                scope.launch { listState.animateScrollToItem(0) }
+                            },
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(16.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.KeyboardArrowUp,
+                                contentDescription = stringResource(R.string.scroll_to_top_cd)
+                            )
+                        }
+                    }
+                    if (showScrollToBottom) {
+                        FilledIconButton(
+                            onClick = {
+                                scope.launch { listState.animateScrollToItem(bottomAnchorIndex) }
+                            },
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(16.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.KeyboardArrowDown,
+                                contentDescription = stringResource(R.string.scroll_to_bottom_cd)
+                            )
                         }
                     }
                 }
@@ -801,6 +884,31 @@ private fun UiMessage.generationSeconds(): Double? {
     return (completedAt - startedAt).coerceAtLeast(0L) / 1000.0
 }
 
+@Composable
+private fun DateDivider(label: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        HorizontalDivider(modifier = Modifier.weight(1f))
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 10.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.outline
+        )
+        HorizontalDivider(modifier = Modifier.weight(1f))
+    }
+}
+
+private fun Long.messageDate(): LocalDate =
+    Instant.ofEpochMilli(this).atZone(ZoneId.systemDefault()).toLocalDate()
+
+private fun Long.messageTime(formatter: DateTimeFormatter): String =
+    formatter.format(Instant.ofEpochMilli(this).atZone(ZoneId.systemDefault()))
+
 private fun copyResponseText(context: Context, text: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     clipboard.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.clipboard_response_label), text))
@@ -863,6 +971,7 @@ private fun android.content.ContentResolver.displayName(uri: Uri): String? {
 }
 
 private const val CHAT_BOTTOM_ANCHOR_KEY = "chat-bottom-anchor"
+private const val SCROLL_POSITION_MULTIPLIER = 100_000
 private const val HISTORY_PANE_DEFAULT_RATIO = 0.3f
 private const val HISTORY_PANE_DEFAULT_WIDTH_VALUE = 320f
 private val HISTORY_PANE_WIDTH = HISTORY_PANE_DEFAULT_WIDTH_VALUE.dp
@@ -873,6 +982,11 @@ private val HISTORY_SPLITTER_LINE_WIDTH = 1.dp
 private sealed class PendingGenerationRequest {
     object Send : PendingGenerationRequest()
     data class Retry(val assistantMessageId: String) : PendingGenerationRequest()
+}
+
+private enum class ScrollButtonDirection {
+    Top,
+    Bottom
 }
 
 @Composable

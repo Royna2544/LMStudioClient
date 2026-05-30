@@ -85,6 +85,7 @@ val LOCAL_TOOL_INFOS = listOf(
 data class UiMessage(
     val id: String = UUID.randomUUID().toString(),
     val role: String,
+    val createdAtMillis: Long = System.currentTimeMillis(),
     val content: String = "",
     val thinkingContent: String = "",
     val toolCalls: List<UiToolCall> = emptyList(),
